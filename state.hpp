@@ -79,11 +79,39 @@ const NoTransition<SourceStateDefinition> no_transition_react_result_;
 template <typename SourceStateDefinition>
 const NoReactionTransition<SourceStateDefinition> no_reaction_react_result_;
 
+template <typename StateDefinition, typename ContextDefinition, typename Enable = void>
+struct IsInContext : std::false_type
+{};
+
+template <typename StateDefinition>
+struct IsInContext<StateDefinition, StateDefinition, void> : std::true_type
+{};
+
+template <typename StateDefinition, typename ... ContextDefinition>
+struct IsInContext<StateDefinition, std::tuple<ContextDefinition...>> :
+std::disjunction<IsInContext<StateDefinition, ContextDefinition>...>
+{};
+
+template <typename StateDefinition, typename ContextDefinition>
+struct IsInContext<StateDefinition, ContextDefinition, std::enable_if_t<
+        !std::is_same_v<StateDefinition, ContextDefinition> &&
+        !std::is_void_v<typename ContextDefinition::SubStates>
+    >>
+: IsInContext<StateDefinition, typename ContextDefinition::SubStates>
+{};
+
+template <typename SourceStateDefinition, typename TargetStateDefinition>
+struct IsValidTransition {
+    using StateMachineDefinition = typename SourceStateDefinition::SMD;
+    static constexpr bool value = IsInContext<TargetStateDefinition, StateMachineDefinition>::value;
+};
+
 template <typename StateDefinition, typename StateMachineDefinition>
 class StateCrtp {
 public:
     template <typename SubStateDefinition>
-    using State = StateCrtp<SubStateDefinition, StateMachineDefinition>; 
+    using State = StateCrtp<SubStateDefinition, StateMachineDefinition>;
+    using SMD = StateMachineDefinition;
 
     StateCrtp() {
         onEntry();
@@ -109,6 +137,7 @@ public:
 
     template <typename TargetStateDefinition>
     const ReactResult<StateDefinition>& transition() {
+        static_assert(IsValidTransition<StateDefinition, TargetStateDefinition>::value);
         return regular_transition_react_result_<StateDefinition, TargetStateDefinition>;
     }
 

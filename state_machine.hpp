@@ -5,9 +5,7 @@ namespace metahsm {
 
 template <typename StateMachineDefinition>
 class StateMachine : public StateCrtp<StateMachineDefinition, StateMachineDefinition> {
-public:
-    template<typename StateDefinition>
-    using State = StateCrtp<StateDefinition, StateMachineDefinition>;
+
 };
 
 template <typename StateMachineDefinition>

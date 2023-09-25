@@ -7,6 +7,7 @@ using namespace metahsm;
 class Event1 {};
 
 class StateMachine0 : public StateMachine<StateMachine0> {
+public:
     class State0 : public State<State0> {
     public:
         int i;
@@ -24,6 +25,7 @@ class StateMachine0 : public StateMachine<StateMachine0> {
         };
         using SubStates = std::tuple<State1, State2>;
     };
+    using SubStates = std::tuple<State0>;
 };
 
 StateMachineMixin<StateMachine0> state_machine;
