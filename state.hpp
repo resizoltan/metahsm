@@ -103,25 +103,31 @@ struct IsInContext<StateDefinition, ContextDefinition, std::enable_if_t<
 : IsInContext<StateDefinition, typename ContextDefinition::SubStates>
 {};
 
-template <typename Tuple>
+template <typename ... T>
 struct Collapse;
 
 template <>
-struct Collapse<std::tuple<>>
+struct Collapse<>
 {
     using Type = void;
 };
 
-template <typename T, typename ... Us>
-struct Collapse<std::tuple<T, Us...>>
+template <typename T>
+struct Collapse<T>
 {
     using Type = T;
 };
 
-template <typename ... Us>
-struct Collapse<std::tuple<void, Us...>>
+template <typename ... T>
+struct Collapse<void, T...>
 {
-    using Type = typename Collapse<Us...>::Type;
+    using Type = typename Collapse<T...>::Type;
+};
+
+template <typename T, typename ... Us>
+struct Collapse<T, Us...>
+{
+    using Type = T;
 };
 
 template <typename StateDefinition1, typename StateDefinition2, typename ContextDefinition, typename Enable = void>
@@ -139,7 +145,7 @@ struct LCAImpl<StateDefinition, StateDefinition, ContextDefinition, void>
 template <typename StateDefinition1, typename StateDefinition2, typename ... ContextDefinition>
 struct LCAImpl<StateDefinition1, StateDefinition2, std::tuple<ContextDefinition...>, void>
 {
-    using Type = typename Collapse<std::tuple<typename LCAImpl<StateDefinition1, StateDefinition2, ContextDefinition>::Type...>>;
+    using Type = typename Collapse<typename LCAImpl<StateDefinition1, StateDefinition2, ContextDefinition>::Type...>;
 };
 
 template <typename StateDefinition1, typename StateDefinition2, typename ContextDefinition>
@@ -150,7 +156,7 @@ struct LCAImpl<StateDefinition1, StateDefinition2, ContextDefinition, std::enabl
     >>
 {
     using SubType = typename LCAImpl<StateDefinition1, StateDefinition2, typename ContextDefinition::SubStates>::Type;
-    using Type = typename Collapse<std::tuple<SubType, ContextDefinition>>::Type;
+    using Type = typename Collapse<SubType, ContextDefinition>::Type;
 };
 
 template <typename StateDefinition1, typename StateDefinition2>
@@ -170,6 +176,7 @@ public:
     using State = StateCrtp<SubStateDefinition, StateMachineDefinition>;
     using SMD = StateMachineDefinition;
     using Mixin = StateMixin<StateDefinition, StateMachineDefinition>;
+    using Initial = void;
 
     StateCrtp() {
         onEntry();
@@ -208,6 +215,11 @@ private:
     }
 };
 
+template <typename State>
+struct StateSpec {
+    using Type = State;
+};
+
 template <typename StateDefinitions>
 class StateVariant;
 
@@ -216,12 +228,28 @@ struct StateVariant<std::tuple<StateDefinition...>>
 {
 public:
     using Type = std::variant<typename StateDefinition::Mixin...>;
+    template <typename SubState>
+    using ContainingState = typename Collapse<
+        std::conditional_t<
+            IsInContext<SubState, StateDefinition>::value,
+            StateDefinition,
+            void
+        >...>::Type;
 };
+
+template <typename StateMachineDefinition>
+class StateMachineMixin;
 
 template <typename StateDefinition, typename HasSubstates = void> 
 class SubState
 {
 public:
+    using Default = void;
+    using SMD = typename StateDefinition::SMD;
+
+    template <typename Spec>
+    SubState(StateMachineMixin<SMD>& state_machine_mixin, Spec spec)
+    {}
     static inline constexpr bool defined = false;
 };
 
@@ -229,6 +257,19 @@ template <typename StateDefinition>
 class SubState<StateDefinition, typename StateDefinition::SubStates>
 {
 public:
+    using Default = std::tuple_element_t<0, typename StateDefinition::SubStates>;
+    using Variant = typename StateVariant<typename StateDefinition::SubStates>::Type;
+    using SMD = typename StateDefinition::SMD;
+
+    template <typename Spec>
+    SubState(StateMachineMixin<SMD>& state_machine_mixin, Spec spec)
+    : active_sub_state_variant_{ 
+        std::in_place_type<typename Variant::template ContainingState<typename Spec::Type>>,
+        state_machine_mixin,
+        spec
+      }
+    {}
+
     static inline constexpr bool defined = true;
 
     template <typename Event>
@@ -241,19 +282,19 @@ public:
         std::visit([](auto& active_sub_state){ active_sub_state.executeTransition(react_result); }, active_sub_state_variant_);
     }
 private:
-    typename StateVariant<typename StateDefinition::SubStates>::Type active_sub_state_variant_;
+    Variant active_sub_state_variant_;
 };
-
-template <typename StateMachineDefinition>
-class StateMachineMixin;
 
 template <typename StateDefinition, typename StateMachineDefinition>
 class StateMixin : public StateDefinition
 {
     using SubState = SubState<StateDefinition>;
+    using Initial = typename Collapse<typename StateDefinition::Initial, typename SubState::Default>::Type;
 public:
-    StateMixin(StateMachineMixin<StateMachineDefinition>& state_machine_mixin)
-    : state_machine_mixin_{state_machine_mixin}
+    template <typename SubStateSpec>
+    StateMixin(StateMachineMixin<StateMachineDefinition>& state_machine_mixin, SubStateSpec spec)
+    : state_machine_mixin_{state_machine_mixin},
+      active_sub_state_{spec}
     {}
 
     template <typename Event>
@@ -299,8 +340,8 @@ public:
     }
 
 private:
-    SubState active_sub_state_;
     StateMachineMixin<StateMachineDefinition>& state_machine_mixin_;
+    SubState active_sub_state_;
 };
 
 }

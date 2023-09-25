@@ -11,7 +11,12 @@ class StateMachine : public StateCrtp<StateMachineDefinition, StateMachineDefini
 template <typename StateMachineDefinition>
 class StateMachineMixin : public StateMachineDefinition {
     using SubState = SubState<StateMachineDefinition, StateMachineDefinition>;
+    using Initial = typename Collapse<typename StateMachineDefinition::Initial, typename SubState::Default>::Type;
 public:
+    StateMachineMixin()
+    : active_sub_state_{*this, StateSpec<Initial>{}}
+    {}
+
     template <typename Event>
     bool dispatch(const Event& e) {
         if constexpr (SubState::defined) {
