@@ -5,6 +5,12 @@
         "initializer_list": "cpp",
         "type_traits": "cpp",
         "xstddef": "cpp",
-        "xtr1common": "cpp"
+        "xtr1common": "cpp",
+        "functional": "cpp",
+        "memory": "cpp",
+        "variant": "cpp",
+        "vector": "cpp",
+        "xmemory": "cpp",
+        "xstring": "cpp"
     }
 }
