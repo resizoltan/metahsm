@@ -32,5 +32,4 @@ StateMachineMixin<StateMachine0> state_machine;
 
 int main(int argc, char *argv[]) {
     state_machine.dispatch(Event1{});    
-    //auto t = state0.template transition<State0::State2>();
 }

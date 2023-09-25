@@ -10,7 +10,7 @@ class StateMachine : public StateCrtp<StateMachineDefinition, StateMachineDefini
 
 template <typename StateMachineDefinition>
 class StateMachineMixin : public StateMachineDefinition {
-    using SubState = SubState<StateMachineDefinition>;
+    using SubState = SubState<StateMachineDefinition, StateMachineDefinition>;
 public:
     template <typename Event>
     bool dispatch(const Event& e) {
