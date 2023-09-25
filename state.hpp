@@ -8,19 +8,21 @@
 namespace metahsm {
 
 template <typename StateDefinition, typename Event, typename Invocable = void>
-struct HasReactionToEvent {
+struct HasReactionToEvent
+{
     static inline constexpr bool value = false;
 };
 
 template <typename StateDefinition, typename Event>
-struct HasReactionToEvent<StateDefinition, Event, std::is_invocable<decltype(&StateDefinition::react), Event>> {
+struct HasReactionToEvent<StateDefinition, Event, std::is_invocable<decltype(&StateDefinition::react), Event>>
+{
     static inline constexpr bool value = std::is_invocable_v<decltype(&StateDefinition::react), Event, Target>;
 };
 
-template <typename StateDefinition, typename SuperStateDefinition>
+template <typename StateDefinition, typename SuperStateMixin>
 class StateMixin;
 
-template<typename SourceStateDefinition, typename SuperStateDefinition>
+template<typename SourceState>
 class ReactResult
 {
 public:
@@ -28,56 +30,57 @@ public:
     : reaction_executed_{reaction_executed}
     {}
 
-    virtual void executeTransition(StateMixin<SourceStateDefinition, SuperStateDefinition>& source) = 0;
+    virtual void executeTransition(SourceState& source) = 0;
     bool reaction_executed_;
 };
 
-template <typename SourceStateDefinition, typename TargetStateDefinition, typename SuperStateDefinition>
-class RegularTransition : public ReactResult<SourceStateDefinition, SuperStateDefinition> {
+template <typename SourceState, typename TargetState>
+class RegularTransition : public ReactResult<SourceState>
+{
 public:
     RegularTransition()
     : ReactResult(true)
     {}
 
-    void executeTransition(StateMixin<SourceStateDefinition, SuperStateDefinition>& source) override {
-        source.template executeTransition<TargetStateDefinition>();
+    void executeTransition(SourceState& source) override {
+        source.template executeTransition<TargetState>();
     }
 };
 
-template <typename SourceStateDefinition, typename SuperStateDefinition>
-class NoTransition : public ReactResult<SourceStateDefinition, SuperStateDefinition>
+template <typename SourceState>
+class NoTransition : public ReactResult<SourceState>
 {
 public:
     NoTransition()
     : ReactResult(true)
     {}
 
-    void executeTransition(StateMixin<SourceStateDefinition, SuperStateDefinition>& source) override {
+    void executeTransition(SourceState& source) override {
         (void)source;
     }
 };
 
-template <typename SourceStateDefinition, typename SuperStateDefinition>
-class NoReactionTransition : public ReactResult<SourceStateDefinition, SuperStateDefinition>
+template <typename SourceState>
+class NoReactionTransition : public ReactResult<SourceState>
 {
 public:
     NoReactionTransition()
     : ReactResult(false)
     {}
 
-    void executeTransition(StateMixin<SourceStateDefinition, SuperStateDefinition>& source) override {
+    void executeTransition(SourceState& source) override {
         (void)source;
     }
 };
 
-template <typename SourceStateDefinition, typename TargetStateDefinition, typename SuperStateDefinition>
-const RegularTransition<SourceStateDefinition, TargetStateDefinition, SuperStateDefinition> regular_transition_react_result_;
+template <typename SourceState, typename TargetState>
+const RegularTransition<SourceState, TargetState> regular_transition_react_result_;
 
-template <typename SourceStateDefinition, typename SuperStateDefinition>
-const NoTransition<SourceStateDefinition, SuperStateDefinition> no_transition_react_result_;
+template <typename SourceState>
+const NoTransition<SourceState> no_transition_react_result_;
 
-template <typename SourceStateDefinition, typename SuperStateDefinition>
-const NoReactionTransition<SourceStateDefinition, SuperStateDefinition> no_reaction_react_result_;
+template <typename SourceState>
+const NoReactionTransition<SourceState> no_reaction_react_result_;
 
 template <typename StateDefinition, typename ContextDefinition, typename Enable = void>
 struct IsInContext : std::false_type
@@ -100,18 +103,73 @@ struct IsInContext<StateDefinition, ContextDefinition, std::enable_if_t<
 : IsInContext<StateDefinition, typename ContextDefinition::SubStates>
 {};
 
-template <typename SourceStateDefinition, typename TargetStateDefinition>
-struct IsValidTransition {
-    using SuperStateDefinition = typename SourceStateDefinition::SSD;
-    static constexpr bool value = IsInContext<TargetStateDefinition, SuperStateDefinition>::value;
+template <typename Tuple>
+struct Collapse;
+
+template <>
+struct Collapse<std::tuple<>>
+{
+    using Type = void;
 };
 
-template <typename StateDefinition, typename SuperStateDefinition>
-class StateCrtp {
+template <typename T, typename ... Us>
+struct Collapse<std::tuple<T, Us...>>
+{
+    using Type = T;
+};
+
+template <typename ... Us>
+struct Collapse<std::tuple<void, Us...>>
+{
+    using Type = typename Collapse<Us...>::Type;
+};
+
+template <typename StateDefinition1, typename StateDefinition2, typename ContextDefinition, typename Enable = void>
+struct LCAImpl
+{
+    using Type = void;
+};
+
+template <typename StateDefinition, typename ContextDefinition>
+struct LCAImpl<StateDefinition, StateDefinition, ContextDefinition, void>
+{
+    using Type = StateDefinition;
+};
+
+template <typename StateDefinition1, typename StateDefinition2, typename ... ContextDefinition>
+struct LCAImpl<StateDefinition1, StateDefinition2, std::tuple<ContextDefinition...>, void>
+{
+    using Type = typename Collapse<std::tuple<typename LCAImpl<StateDefinition1, StateDefinition2, ContextDefinition>::Type...>>;
+};
+
+template <typename StateDefinition1, typename StateDefinition2, typename ContextDefinition>
+struct LCAImpl<StateDefinition1, StateDefinition2, ContextDefinition, std::enable_if_t<
+        !std::is_void_v<typename ContextDefinition::SubStates> &&
+        IsInContext<StateDefinition1, ContextDefinition>::value &&
+        IsInContext<StateDefinition2, ContextDefinition>::value
+    >>
+{
+    using SubType = typename LCAImpl<StateDefinition1, StateDefinition2, typename ContextDefinition::SubStates>::Type;
+    using Type = typename Collapse<std::tuple<SubType, ContextDefinition>>::Type;
+};
+
+template <typename StateDefinition1, typename StateDefinition2>
+using LCA = typename LCAImpl<StateDefinition1, StateDefinition2, typename StateDefinition1::SMD>::Type;
+
+template <typename SourceStateDefinition, typename TargetStateDefinition>
+struct IsValidTransition
+{
+    static constexpr bool value = IsInContext<TargetStateDefinition, typename SourceStateDefinition::SMD>::value;
+};
+
+template <typename StateDefinition, typename StateMachineDefinition>
+class StateCrtp
+{
 public:
     template <typename SubStateDefinition>
-    using State = StateCrtp<SubStateDefinition, SuperStateDefinition>;
-    using SSD = SuperStateDefinition;
+    using State = StateCrtp<SubStateDefinition, StateMachineDefinition>;
+    using SMD = StateMachineDefinition;
+    using Mixin = StateMixin<StateDefinition, StateMachineDefinition>;
 
     StateCrtp() {
         onEntry();
@@ -132,9 +190,9 @@ public:
     }
 
     template <typename TargetStateDefinition>
-    const ReactResult<StateDefinition, SuperStateDefinition>& transition() {
+    const ReactResult<Mixin>& transition() {
         static_assert(IsValidTransition<StateDefinition, TargetStateDefinition>::value);
-        return regular_transition_react_result_<StateDefinition, TargetStateDefinition, SuperStateDefinition>;
+        return regular_transition_react_result_<Mixin, StateMixin<TargetStateDefinition, SMD>>;
     }
 
     void onEntry() { }
@@ -146,27 +204,29 @@ private:
     }
 
     decltype(auto) mixin() {
-        return static_cast<StateMixin<StateDefinition, SuperStateDefinition>&>(*this);
+        return static_cast<Mixin>&>(*this);
     }
 };
 
-template <typename StateDefinitions, typename SuperStateDefinition>
+template <typename StateDefinitions>
 class StateVariant;
 
-template <typename ... StateDefinition, typename SuperStateDefinition>
-struct StateVariant<std::tuple<StateDefinition...>, SuperStateDefinition> {
+template <typename ... StateDefinition>
+struct StateVariant<std::tuple<StateDefinition...>>
+{
 public:
-    using Type = std::variant<StateMixin<StateDefinition, SuperStateDefinition>...>;
+    using Type = std::variant<typename StateDefinition::Mixin...>;
 };
 
-template <typename StateDefinition, typename SuperStateDefinition, typename HasSubstates = void> 
-class SubState {
+template <typename StateDefinition, typename HasSubstates = void> 
+class SubState
+{
 public:
     static inline constexpr bool defined = false;
 };
 
-template <typename StateDefinition, typename SuperStateDefinition>
-class SubState<StateDefinition, SuperStateDefinition, typename StateDefinition::SubStates>
+template <typename StateDefinition>
+class SubState<StateDefinition, typename StateDefinition::SubStates>
 {
 public:
     static inline constexpr bool defined = true;
@@ -176,23 +236,23 @@ public:
         return std::visit([](auto& active_sub_state){ return active_sub_state.handleEvent(); }, active_sub_state_variant_);
     }
 
-    template <typename SourceStateDefinition>
-    void executeTransition(const ReactResult<SourceStateDefinition, SuperStateDefinition>& react_result) {
+    template <typename SourceState>
+    void executeTransition(const ReactResult<SourceState>& react_result) {
         std::visit([](auto& active_sub_state){ active_sub_state.executeTransition(react_result); }, active_sub_state_variant_);
     }
 private:
-    typename StateVariant<typename StateDefinition::SubStates, SuperStateDefinition>::Type active_sub_state_variant_;
+    typename StateVariant<typename StateDefinition::SubStates>::Type active_sub_state_variant_;
 };
 
 template <typename StateMachineDefinition>
 class StateMachineMixin;
 
-template <typename StateDefinition, typename SuperStateDefinition>
-class StateMixin : public StateDefinition {
-    using SubState = SubState<StateDefinition, SuperStateDefinition>;
-    using SuperState = SuperState<StateDefinition, SuperStateDefinition>;
+template <typename StateDefinition, typename StateMachineDefinition>
+class StateMixin : public StateDefinition
+{
+    using SubState = SubState<StateDefinition>;
 public:
-    StateMixin(StateMixin<SuperState>& state_machine_mixin)
+    StateMixin(StateMachineMixin<StateMachineDefinition>& state_machine_mixin)
     : state_machine_mixin_{state_machine_mixin}
     {}
 
@@ -214,20 +274,24 @@ public:
         return no_reaction_react_result_<StateDefinition>;
     }
 
-    template <typename TargetStateDefinition>
+    template <typename TargetState>
     void executeTransition() {
         if constexpr (SubState::defined) {
-            active_sub_state_.template executeTransition<TargetStateDefinition>();
+            active_sub_state_.template executeTransition<TargetState>();
         }
         else {
-            state_machine_mixin_.template executeTransition<StateDefinition, TargetStateDefinition>();
+            state_machine_mixin_.template executeTransition<StateMixin, TargetState>();
         }
+    }
+
+    template <typename SourceState, typename TargetState>
+    void executeTransition() {
     }
 
     template <typename ContextDefinition>
     void context() {
         if constexpr (SubState::defined) {
-            active_sub_state_.template executeTransition<TargetStateDefinition>();
+            //active_sub_state_.template executeTransition<TargetState>();
         }
         else {
             //using LCA = typename LCA<StateDefinition, TargetStateDefinition>::Type;

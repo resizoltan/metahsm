@@ -30,20 +30,25 @@ public:
         return false;
     }
 
-    template <typename TargetStateDefinition>
+    template <typename TargetState>
     void executeTransition() {
         if constexpr (SubState::defined) {
-            active_sub_state_.template executeTransition<TargetStateDefinition>();
+            active_sub_state_.template executeTransition<TargetState>();
         }
-        else {
-           // using LCA = typename LCA<StateDefinition, TargetStateDefinition>::Type;
+    }
+
+    template <typename SourceState, typename TargetState>
+    void executeTransition() {
+        using LCA = metahsm::LCA<SourceState, TargetState>;
+        if constexpr (SubState::defined) {
+            active_sub_state_.template executeTransition<LCA, TargetStateDefinition>();
         }
     }
 
     template <typename ContextDefinition>
     void context() {
         if constexpr (SubState::defined) {
-            active_sub_state_.template executeTransition<TargetStateDefinition>();
+            //active_sub_state_.template executeTransition<TargetStateDefinition>();
         }
         else {
             //using LCA = typename LCA<StateDefinition, TargetStateDefinition>::Type;
