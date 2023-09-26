@@ -37,3 +37,6 @@
 # Build
 
 build/*
+*.obj
+*.pdb
+*.ilk

@@ -206,6 +206,14 @@ public:
         return &regular_transition_react_result_<Mixin, StateMixin<TargetStateDefinition, SMD>>;
     }
 
+    const ReactResult<Mixin>* no_transition() {
+        return &no_transition_react_result_<Mixin>;
+    }
+
+    const ReactResult<Mixin>* condition_not_met() {
+        return &no_reaction_react_result_<Mixin>;
+    }
+
     void onEntry() { }
     void onExit() { }
 
@@ -296,9 +304,9 @@ public:
         return std::visit([&](auto& active_sub_state){ return active_sub_state.handleEvent(e); }, active_sub_state_variant_);
     }
 
-    template <typename SourceState>
-    void executeTransition(const ReactResult<SourceState>& react_result) {
-        std::visit([](auto& active_sub_state){ active_sub_state.executeTransition(react_result); }, active_sub_state_variant_);
+    template <typename TargetState>
+    void executeTransition() {
+        std::visit([](auto& active_sub_state){ active_sub_state.template executeTransition<TargetState>(); }, active_sub_state_variant_);
     }
 private:
     StateMachineMixin<SMD>& state_machine_mixin_;
