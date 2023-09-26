@@ -8,30 +8,33 @@
 namespace metahsm {
 
 template <typename StateDefinition, typename Event, typename Invocable = void>
-struct HasReactionToEvent
-{
-    static inline constexpr bool value = false;
-};
+struct HasReactionToEvent : public std::false_type
+{};
 
 template <typename StateDefinition, typename Event>
-struct HasReactionToEvent<StateDefinition, Event, std::is_invocable<decltype(&StateDefinition::react), Event>>
-{
-    static inline constexpr bool value = std::is_invocable_v<decltype(&StateDefinition::react), Event, Target>;
-};
+struct HasReactionToEvent<StateDefinition, Event, std::void_t<std::is_invocable<decltype(&StateDefinition::react), StateDefinition&, const Event&>>>
+: std::true_type
+{};
 
 template <typename StateDefinition, typename SuperStateMixin>
 class StateMixin;
 
-template<typename SourceState>
-class ReactResult
+class ReactResultBase
 {
 public:
-    ReactResult(bool reaction_executed)
+    ReactResultBase(bool reaction_executed)
     : reaction_executed_{reaction_executed}
     {}
-
-    virtual void executeTransition(SourceState& source) = 0;
     bool reaction_executed_;
+};
+
+template<typename SourceState>
+class ReactResult : public ReactResultBase
+{
+public:
+    using ReactResultBase::ReactResultBase;
+
+    virtual void executeTransition(SourceState& source) const = 0;
 };
 
 template <typename SourceState, typename TargetState>
@@ -42,7 +45,7 @@ public:
     : ReactResult(true)
     {}
 
-    void executeTransition(SourceState& source) override {
+    void executeTransition(SourceState& source) const override {
         source.template executeTransition<TargetState>();
     }
 };
@@ -55,7 +58,7 @@ public:
     : ReactResult(true)
     {}
 
-    void executeTransition(SourceState& source) override {
+    void executeTransition(SourceState& source) const override {
         (void)source;
     }
 };
@@ -68,7 +71,7 @@ public:
     : ReactResult(false)
     {}
 
-    void executeTransition(SourceState& source) override {
+    void executeTransition(SourceState& source) const override {
         (void)source;
     }
 };
@@ -145,12 +148,13 @@ struct LCAImpl<StateDefinition, StateDefinition, ContextDefinition, void>
 template <typename StateDefinition1, typename StateDefinition2, typename ... ContextDefinition>
 struct LCAImpl<StateDefinition1, StateDefinition2, std::tuple<ContextDefinition...>, void>
 {
-    using Type = typename Collapse<typename LCAImpl<StateDefinition1, StateDefinition2, ContextDefinition>::Type...>;
+    using Type = typename Collapse<typename LCAImpl<StateDefinition1, StateDefinition2, ContextDefinition>::Type...>::Type;
 };
 
 template <typename StateDefinition1, typename StateDefinition2, typename ContextDefinition>
 struct LCAImpl<StateDefinition1, StateDefinition2, ContextDefinition, std::enable_if_t<
         !std::is_void_v<typename ContextDefinition::SubStates> &&
+        !std::is_same_v<StateDefinition1, StateDefinition2> &&
         IsInContext<StateDefinition1, ContextDefinition>::value &&
         IsInContext<StateDefinition2, ContextDefinition>::value
     >>
@@ -197,9 +201,9 @@ public:
     }
 
     template <typename TargetStateDefinition>
-    const ReactResult<Mixin>& transition() {
+    const ReactResult<Mixin>* transition() {
         static_assert(IsValidTransition<StateDefinition, TargetStateDefinition>::value);
-        return regular_transition_react_result_<Mixin, StateMixin<TargetStateDefinition, SMD>>;
+        return &regular_transition_react_result_<Mixin, StateMixin<TargetStateDefinition, SMD>>;
     }
 
     void onEntry() { }
@@ -211,13 +215,13 @@ private:
     }
 
     decltype(auto) mixin() {
-        return static_cast<Mixin>&>(*this);
+        return static_cast<Mixin&>(*this);
     }
 };
 
-template <typename State>
+template <typename StateDefinition>
 struct StateSpec {
-    using Type = State;
+    using Type = StateDefinition;
 };
 
 template <typename StateDefinitions>
@@ -254,27 +258,42 @@ public:
 };
 
 template <typename StateDefinition>
-class SubState<StateDefinition, typename StateDefinition::SubStates>
+class SubState<StateDefinition, std::void_t<typename StateDefinition::SubStates>>
 {
 public:
     using Default = std::tuple_element_t<0, typename StateDefinition::SubStates>;
-    using Variant = typename StateVariant<typename StateDefinition::SubStates>::Type;
+    using Variant = StateVariant<typename StateDefinition::SubStates>;
     using SMD = typename StateDefinition::SMD;
 
     template <typename Spec>
     SubState(StateMachineMixin<SMD>& state_machine_mixin, Spec spec)
-    : active_sub_state_variant_{ 
-        std::in_place_type<typename Variant::template ContainingState<typename Spec::Type>>,
-        state_machine_mixin,
-        spec
+    : state_machine_mixin_{state_machine_mixin},
+      active_sub_state_variant_{ 
+        std::in_place_type<typename Variant::ContainingState<typename Spec::Type>::Mixin>,
+        state_machine_mixin, spec
       }
     {}
+
+    template <typename LCA, typename TargetStateDefinition>
+    void executeTransition()
+    {
+        if constexpr(std::is_same_v<LCA, StateDefinition>) {
+            using Spec = StateSpec<TargetStateDefinition>;
+            active_sub_state_variant_.emplace<typename Variant::ContainingState<typename Spec::Type>::Mixin>(
+                state_machine_mixin_,
+                Spec{});
+        }
+        else {
+            std::visit([](auto& active_sub_state){ 
+                active_sub_state.template executeTransition<LCA, TargetStateDefinition>(); }, active_sub_state_variant_);
+        }
+    }
 
     static inline constexpr bool defined = true;
 
     template <typename Event>
-    decltype(auto) handleEvent(const Event& e) {
-        return std::visit([](auto& active_sub_state){ return active_sub_state.handleEvent(); }, active_sub_state_variant_);
+    bool handleEvent(const Event& e) {
+        return std::visit([&](auto& active_sub_state){ return active_sub_state.handleEvent(e); }, active_sub_state_variant_);
     }
 
     template <typename SourceState>
@@ -282,7 +301,8 @@ public:
         std::visit([](auto& active_sub_state){ active_sub_state.executeTransition(react_result); }, active_sub_state_variant_);
     }
 private:
-    Variant active_sub_state_variant_;
+    StateMachineMixin<SMD>& state_machine_mixin_;
+    typename Variant::Type active_sub_state_variant_;
 };
 
 template <typename StateDefinition, typename StateMachineDefinition>
@@ -290,43 +310,56 @@ class StateMixin : public StateDefinition
 {
     using SubState = SubState<StateDefinition>;
     using Initial = typename Collapse<typename StateDefinition::Initial, typename SubState::Default>::Type;
+    static constexpr bool is_composite = SubState::defined;
 public:
+    using Definition = StateDefinition;
     template <typename SubStateSpec>
     StateMixin(StateMachineMixin<StateMachineDefinition>& state_machine_mixin, SubStateSpec spec)
     : state_machine_mixin_{state_machine_mixin},
-      active_sub_state_{spec}
+      active_sub_state_{state_machine_mixin, spec}
+    {}
+
+    template <>
+    StateMixin(StateMachineMixin<StateMachineDefinition>& state_machine_mixin, StateSpec<StateDefinition> spec)
+    : state_machine_mixin_{state_machine_mixin},
+      active_sub_state_{state_machine_mixin, StateSpec<Initial>{}}
     {}
 
     template <typename Event>
-    decltype(auto) handleEvent(const Event& e) {
-        if constexpr (SubState::defined) {
-            decltype(auto) react_result = active_sub_state_.handleEvent(e);
-            if(react_result.reaction_executed_) {
-                return react_result;
+    bool handleEvent(const Event& e) {
+        if constexpr (is_composite) {
+            bool reaction_executed = active_sub_state_.handleEvent(e);
+            if(reaction_executed) {
+                return true;
             }
         }
         if constexpr(HasReactionToEvent<StateDefinition, Event>::value) {
-            decltype(auto) react_result = this->react(e);
-            if(react_result.reaction_executed_) {
-                react_result.executeTransition(*this);
-                return react_result;
+            auto react_result = this->react(e);
+            if(react_result->reaction_executed_) {
+                react_result->executeTransition(*this);
+                return true;
             }
         }
-        return no_reaction_react_result_<StateDefinition>;
+        return false;
     }
 
     template <typename TargetState>
     void executeTransition() {
-        if constexpr (SubState::defined) {
+        if constexpr (is_composite) {
             active_sub_state_.template executeTransition<TargetState>();
         }
         else {
-            state_machine_mixin_.template executeTransition<StateMixin, TargetState>();
+            using TargetStateDefinition = typename TargetState::Definition;
+            using LCA = metahsm::LCA<StateDefinition, TargetStateDefinition>;
+            state_machine_mixin_.template executeTransition<LCA, TargetStateDefinition>();
         }
     }
 
-    template <typename SourceState, typename TargetState>
+    template <typename LCA, typename TargetStateDefinition>
     void executeTransition() {
+        if constexpr (is_composite) {
+            active_sub_state_.template executeTransition<LCA, TargetStateDefinition>();
+        }
     }
 
     template <typename ContextDefinition>

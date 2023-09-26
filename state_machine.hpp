@@ -10,7 +10,7 @@ class StateMachine : public StateCrtp<StateMachineDefinition, StateMachineDefini
 
 template <typename StateMachineDefinition>
 class StateMachineMixin : public StateMachineDefinition {
-    using SubState = SubState<StateMachineDefinition, StateMachineDefinition>;
+    using SubState = SubState<StateMachineDefinition>;
     using Initial = typename Collapse<typename StateMachineDefinition::Initial, typename SubState::Default>::Type;
 public:
     StateMachineMixin()
@@ -20,8 +20,8 @@ public:
     template <typename Event>
     bool dispatch(const Event& e) {
         if constexpr (SubState::defined) {
-            decltype(auto) react_result = active_sub_state_.handleEvent(e);
-            if(react_result.reaction_executed_) {
+            bool reaction_executed = active_sub_state_.handleEvent(e);
+            if(reaction_executed) {
                 return true;
             }
         }
@@ -42,9 +42,8 @@ public:
         }
     }
 
-    template <typename SourceState, typename TargetState>
+    template <typename LCA, typename TargetStateDefinition>
     void executeTransition() {
-        using LCA = metahsm::LCA<SourceState, TargetState>;
         if constexpr (SubState::defined) {
             active_sub_state_.template executeTransition<LCA, TargetStateDefinition>();
         }
