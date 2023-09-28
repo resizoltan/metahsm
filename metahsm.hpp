@@ -7,8 +7,9 @@
 
 namespace metahsm {
 
-class Entity {};
-
+//=====================================================================================================//
+//                                          METAMODEL                                                  //
+//=====================================================================================================//
 struct SimpleStateType {};
 struct CompositeStateType {};
 struct TopStateType {};
@@ -50,17 +51,9 @@ class MixinImpl;
 template <typename _StateDef, typename _TopStateDef>
 using Mixin = typename MixinImpl<_StateDef, _TopStateDef, meta_type_t<_StateDef, _TopStateDef>>::Type;
 
-template <typename _StateDef, typename _Event, typename _Enable = void>
-struct HasReactionToEvent : public std::false_type
-{};
-
-template <typename _StateDef, typename _Event>
-struct HasReactionToEvent<_StateDef, _Event, std::void_t<std::is_invocable<decltype(&_StateDef::react), _StateDef&, const _Event&>>>
-: std::true_type
-{};
-
-template <typename ... _Tuple>
-using TupleJoin = decltype(std::tuple_cat(std::declval<_Tuple>()...));
+//=====================================================================================================//
+//                                     TYPE ERASED TRANSITION                                          //
+//=====================================================================================================//
 
 template<typename _SourceStateDef>
 class TypeErasedTransition
@@ -114,6 +107,68 @@ const NoTransition<_SourceStateDef> no_transition_;
 
 template <typename _SourceStateDef>
 const ConditionNotMet<_SourceStateDef> condition_not_met_;
+
+template <typename _SourceStateDef, typename _TargetStateDef>
+struct IsValidTransition
+{
+    static constexpr bool value = IsInContextRecursive<_TargetStateDef, typename _SourceStateDef::TopStateDef>::value;
+};
+
+//=====================================================================================================//
+//                                     STATE TEMPLATE - USER API                                       //
+//=====================================================================================================//
+
+template <typename _StateDef, typename _TopStateDef>
+class StateCrtp : public StateBase
+{
+public:
+    using StateDef = _StateDef;
+    using TopStateDef = _TopStateDef;
+
+    template <typename _SubStateDef>
+    using State = StateCrtp<_SubStateDef, _TopStateDef>;
+
+    template <typename _ContextDef>
+    decltype(auto) context()  {
+        static_assert(IsInContextRecursive<_StateDef, _ContextDef>::value, "Requested context is not available in the state!");
+        return mixin().template context<_ContextDef>();
+    }
+
+    template <typename _TargetStateDef>
+    const TypeErasedTransition<_StateDef>* transition() {
+        static_assert(IsValidTransition<_StateDef, _TargetStateDef>::value);
+        return &regular_transition_<_StateDef, _TargetStateDef>;
+    }
+
+    const TypeErasedTransition<_StateDef>* no_transition() {
+        return &no_transition_<_StateDef>;
+    }
+
+    const TypeErasedTransition<_StateDef>* condition_not_met() {
+        return &condition_not_met_<_StateDef>;
+    }
+
+protected:
+    decltype(auto) mixin() {
+        return static_cast<Mixin<_StateDef, _TopStateDef>&>(*this);
+    }
+};
+
+//=====================================================================================================//
+//                                              HELPERS                                                //
+//=====================================================================================================//
+
+template <typename _StateDef, typename _Event, typename _Enable = void>
+struct HasReactionToEvent : public std::false_type
+{};
+
+template <typename _StateDef, typename _Event>
+struct HasReactionToEvent<_StateDef, _Event, std::void_t<std::is_invocable<decltype(&_StateDef::react), _StateDef&, const _Event&>>>
+: std::true_type
+{};
+
+template <typename ... _Tuple>
+using TupleJoin = decltype(std::tuple_cat(std::declval<_Tuple>()...));
 
 template <typename _StateDef, typename _ContextDef, typename Enable = void>
 struct IsInContextRecursive : std::false_type
@@ -258,48 +313,6 @@ struct InitialRecursive<_StateDef, _TopStateDef, std::enable_if_t<
     using Type = typename InitialRecursive<typename Mixin<_StateDef, _TopStateDef>::DefaultInitial, _TopStateDef>::Type;
 };
 
-template <typename _SourceStateDef, typename _TargetStateDef>
-struct IsValidTransition
-{
-    static constexpr bool value = IsInContextRecursive<_TargetStateDef, typename _SourceStateDef::TopStateDef>::value;
-};
-
-template <typename _StateDef, typename _TopStateDef>
-class StateCrtp : public StateBase
-{
-public:
-    using StateDef = _StateDef;
-    using TopStateDef = _TopStateDef;
-
-    template <typename _SubStateDef>
-    using State = StateCrtp<_SubStateDef, _TopStateDef>;
-
-    template <typename _ContextDef>
-    decltype(auto) context()  {
-        static_assert(IsInContextRecursive<_StateDef, _ContextDef>::value, "Requested context is not available in the state!");
-        return mixin().template context<_ContextDef>();
-    }
-
-    template <typename _TargetStateDef>
-    const TypeErasedTransition<_StateDef>* transition() {
-        static_assert(IsValidTransition<_StateDef, _TargetStateDef>::value);
-        return &regular_transition_<_StateDef, _TargetStateDef>;
-    }
-
-    const TypeErasedTransition<_StateDef>* no_transition() {
-        return &no_transition_<_StateDef>;
-    }
-
-    const TypeErasedTransition<_StateDef>* condition_not_met() {
-        return &condition_not_met_<_StateDef>;
-    }
-
-protected:
-    decltype(auto) mixin() {
-        return static_cast<Mixin<_StateDef, _TopStateDef>&>(*this);
-    }
-};
-
 template <typename _StateDef>
 struct StateSpec
 {
@@ -325,6 +338,10 @@ public:
         >...>::Type;
 };
 
+
+//=====================================================================================================//
+//                    STATE MIXINS - INTERNAL, IMPLEMENT STATE MACHINE BEHAVIOR                        //
+//=====================================================================================================//
 
 template <typename _StateDef>
 class TopStateMixin;
@@ -495,6 +512,29 @@ struct MixinImpl<_StateDef, _StateDef, TopStateType>
 {
     using Type = TopStateMixin<_StateDef>;
 };
+
+
+//=====================================================================================================//
+//                                         STATE MACHINE                                               //
+//=====================================================================================================//
+
+template <typename _TopStateDef>
+class StateMachine
+{
+public:
+    StateMachine()
+    : top_state_(*this)
+    {}
+
+    template <typename _Event>
+    bool dispatch(const _Event& event) {
+        return top_state_.handleEvent(event);
+    }
+
+private:
+    TopStateMixin<_TopStateDef> top_state_;
+};
+
 
 
 }
