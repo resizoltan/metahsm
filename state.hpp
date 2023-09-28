@@ -9,133 +9,125 @@ namespace metahsm {
 
 class Entity {};
 
-namespace metamodel {
-namespace entitytypes {
 struct SimpleStateType {};
 struct CompositeStateType {};
 struct TopStateType {};
-}
-}
 
-namespace basemodel {
-namespace entitybases {
-struct Entity {};
-struct EState : Entity {};
-struct SimpleState : EState {};
-struct CompositeState : EState {};
-struct TopState : CompositeState {};
-}
-}
+struct EntityBase {};
+struct StateBase : EntityBase {};
+struct SimpleStateBase : StateBase {};
+struct CompositeStateBase : StateBase {};
+struct TopStateBase : CompositeStateBase {};
 
-template <typename EntityType, typename TopStateDefinition, typename SFINAE = void, typename Enable = void>
+template <typename _Entity, typename _TopStateDef, typename _SFINAE = void, typename _Enable = void>
 struct MetaType
 {
-    using Type = metamodel::entitytypes::SimpleStateType;
+    using Type = SimpleStateType;
 };
 
-template <typename EntityType, typename TopStateDefinition>
-struct MetaType<EntityType, TopStateDefinition, std::void_t<typename EntityType::SubStates>, 
-    std::enable_if_t<std::is_base_of_v<basemodel::entitybases::EState, EntityType>
-                 && !std::is_base_of_v<basemodel::entitybases::TopState, EntityType>
+template <typename _Entity, typename _TopStateDef>
+struct MetaType<_Entity, _TopStateDef, std::void_t<typename _Entity::SubStates>, 
+    std::enable_if_t<std::is_base_of_v<StateBase, _Entity>
+                 && !std::is_base_of_v<TopStateBase, _Entity>
     >>
 {
-    using Type = metamodel::entitytypes::CompositeStateType;
+    using Type = CompositeStateType;
 };
 
-template <typename EntityType, typename TopStateDefinition>
-struct MetaType<EntityType, TopStateDefinition, std::void_t<typename EntityType::SubStates>, 
-    std::enable_if_t<std::is_base_of_v<basemodel::entitybases::TopState, EntityType>>>
+template <typename _Entity, typename _TopStateDef>
+struct MetaType<_Entity, _TopStateDef, std::void_t<typename _Entity::SubStates>, 
+    std::enable_if_t<std::is_base_of_v<TopStateBase, _Entity>>>
 {
-    using Type = metamodel::entitytypes::TopStateType;
+    using Type = TopStateType;
 };
 
-template <typename T, typename TopStateDefinition>
-using meta_type_t = typename MetaType<T, TopStateDefinition>::Type;
+template <typename _StateDef, typename _TopStateDef>
+using meta_type_t = typename MetaType<_StateDef, _TopStateDef>::Type;
 
-template <typename Definition, typename TopStateDefinition, typename MetaType>
+template <typename _StateDef, typename _TopStateDef, typename _MetaType>
 class MixinImpl;
 
-template <typename Definition, typename TopStateDefinition>
-using Mixin = typename MixinImpl<Definition, TopStateDefinition, meta_type_t<Definition, TopStateDefinition>>::Type;
+template <typename _StateDef, typename _TopStateDef>
+using Mixin = typename MixinImpl<_StateDef, _TopStateDef, meta_type_t<_StateDef, _TopStateDef>>::Type;
 
-template <typename StateDefinition, typename Event, typename Invocable = void>
+template <typename _StateDef, typename _Event, typename _Enable = void>
 struct HasReactionToEvent : public std::false_type
 {};
 
-template <typename StateDefinition, typename Event>
-struct HasReactionToEvent<StateDefinition, Event, std::void_t<std::is_invocable<decltype(&StateDefinition::react), StateDefinition&, const Event&>>>
+template <typename _StateDef, typename _Event>
+struct HasReactionToEvent<_StateDef, _Event, std::void_t<std::is_invocable<decltype(&_StateDef::react), _StateDef&, const _Event&>>>
 : std::true_type
 {};
 
-template <typename ... Tuple>
-using TupleJoin = decltype(std::tuple_cat(std::declval<Tuple>()...));
+template <typename ... _Tuple>
+using TupleJoin = decltype(std::tuple_cat(std::declval<_Tuple>()...));
 
-template<typename SourceStateDefinition>
+template<typename _SourceStateDef>
 class TypeErasedTransition
 {
 public:
-    virtual bool execute(Mixin<SourceStateDefinition, typename SourceStateDefinition::SMD>& source) const = 0;
+    virtual bool execute(Mixin<_SourceStateDef, typename _SourceStateDef::TopStateDef>& source) const = 0;
 };
 
-template <typename SourceStateDefinition, typename TargetStateDefinition>
-class RegularTransition : public TypeErasedTransition<SourceStateDefinition>
+template <typename _SourceStateDef, typename _TargetStateDef>
+class RegularTransition : public TypeErasedTransition<_SourceStateDef>
 {
 public:
-    bool execute(Mixin<SourceStateDefinition, typename SourceStateDefinition::SMD>& source) const override {
-        source.template executeTransition<TargetStateDefinition>();
+    bool execute(Mixin<_SourceStateDef, typename _SourceStateDef::TopStateDef>& source) const override {
+        source.template executeTransition<_TargetStateDef>();
         return true;
     }
 };
 
-template <typename SourceStateDefinition>
-class NoTransition : public TypeErasedTransition<SourceStateDefinition>
+template <typename _SourceStateDef>
+class NoTransition : public TypeErasedTransition<_SourceStateDef>
 {
 public:
-    bool execute(Mixin<SourceStateDefinition, typename SourceStateDefinition::SMD>&) const override {
+    bool execute(Mixin<_SourceStateDef, typename _SourceStateDef::TopStateDef>&) const override {
         return true;
     }
 };
 
-template <typename SourceStateDefinition>
-class ConditionNotMet : public TypeErasedTransition<SourceStateDefinition>
+template <typename _SourceStateDef>
+class ConditionNotMet : public TypeErasedTransition<_SourceStateDef>
 {
 public:
-    bool execute(Mixin<SourceStateDefinition, typename SourceStateDefinition::SMD>&) const override {
+    bool execute(Mixin<_SourceStateDef, typename _SourceStateDef::TopStateDef>&) const override {
         return false;
     }
 };
 
-template <typename SourceStateDefinition, typename TargetStateDefinition>
-const RegularTransition<SourceStateDefinition, TargetStateDefinition> regular_transition_;
+template <typename _SourceStateDef, typename _TargetStateDef>
+const RegularTransition<_SourceStateDef, _TargetStateDef> regular_transition_;
 
-template <typename SourceStateDefinition>
-const NoTransition<SourceStateDefinition> no_transition_;
+template <typename _SourceStateDef>
+const NoTransition<_SourceStateDef> no_transition_;
 
-template <typename SourceStateDefinition>
-const ConditionNotMet<SourceStateDefinition> condition_not_met_;
+template <typename _SourceStateDef>
+const ConditionNotMet<_SourceStateDef> condition_not_met_;
 
-template <typename StateDefinition, typename ContextDefinition, typename Enable = void>
-struct IsInContext : std::false_type
+template <typename _StateDef, typename _ContextDef, typename Enable = void>
+struct IsInContextRecursive : std::false_type
 {};
 
-template <typename StateDefinition>
-struct IsInContext<StateDefinition, StateDefinition, void> : std::true_type
+template <typename _StateDef>
+struct IsInContextRecursive<_StateDef, _StateDef, void> : std::true_type
 {};
 
-template <typename StateDefinition, typename ... ContextDefinition>
-struct IsInContext<StateDefinition, std::tuple<ContextDefinition...>> :
-std::disjunction<IsInContext<StateDefinition, ContextDefinition>...>
+template <typename _StateDef, typename ... _ContextDef>
+struct IsInContextRecursive<_StateDef, std::tuple<_ContextDef...>> :
+std::disjunction<IsInContextRecursive<_StateDef, _ContextDef>...>
 {};
 
-template <typename StateDefinition, typename ContextDefinition>
-struct IsInContext<StateDefinition, ContextDefinition, std::enable_if_t<
-        !std::is_same_v<StateDefinition, ContextDefinition> &&
-        !std::is_void_v<typename ContextDefinition::SubStates>
+template <typename _StateDef, typename _ContextDef>
+struct IsInContextRecursive<_StateDef, _ContextDef, std::enable_if_t<
+        !std::is_same_v<_StateDef, _ContextDef> &&
+        !std::is_void_v<typename _ContextDef::SubStates>
     >>
-: IsInContext<StateDefinition, typename ContextDefinition::SubStates>
+: IsInContextRecursive<_StateDef, typename _ContextDef::SubStates>
 {};
 
-template <typename ... T>
+template <typename ... _StateDef>
 struct Collapse;
 
 template <>
@@ -144,103 +136,102 @@ struct Collapse<>
     using Type = void;
 };
 
-template <typename T>
-struct Collapse<T>
+template <typename _StateDef>
+struct Collapse<_StateDef>
 {
-    using Type = T;
+    using Type = _StateDef;
 };
 
-template <typename ... T>
-struct Collapse<void, T...>
+template <typename ... _StateDef>
+struct Collapse<void, _StateDef...>
 {
-    using Type = typename Collapse<T...>::Type;
+    using Type = typename Collapse<_StateDef...>::Type;
 };
 
-template <typename T, typename ... Us>
-struct Collapse<T, Us...>
+template <typename _StateDef, typename ... Us>
+struct Collapse<_StateDef, Us...>
 {
-    using Type = T;
+    using Type = _StateDef;
 };
 
-template <typename StateDefinition1, typename StateDefinition2, typename ContextDefinition, typename Enable = void>
+template <typename _StateDef1, typename _StateDef2, typename _ContextDef, typename _Enable = void>
 struct LCAImpl
 {
     using Type = void;
 };
 
-template <typename StateDefinition, typename ContextDefinition>
-struct LCAImpl<StateDefinition, StateDefinition, ContextDefinition, void>
+template <typename _StateDef, typename _ContextDef>
+struct LCAImpl<_StateDef, _StateDef, _ContextDef, void>
 {
-    using Type = StateDefinition;
+    using Type = _StateDef;
 };
 
-template <typename StateDefinition1, typename StateDefinition2, typename ... ContextDefinition>
-struct LCAImpl<StateDefinition1, StateDefinition2, std::tuple<ContextDefinition...>, void>
+template <typename _StateDef1, typename _StateDef2, typename ... _ContextDef>
+struct LCAImpl<_StateDef1, _StateDef2, std::tuple<_ContextDef...>, void>
 {
-    using Type = typename Collapse<typename LCAImpl<StateDefinition1, StateDefinition2, ContextDefinition>::Type...>::Type;
+    using Type = typename Collapse<typename LCAImpl<_StateDef1, _StateDef2, _ContextDef>::Type...>::Type;
 };
 
-template <typename StateDefinition1, typename StateDefinition2, typename ContextDefinition>
-struct LCAImpl<StateDefinition1, StateDefinition2, ContextDefinition, std::enable_if_t<
-        !std::is_void_v<typename ContextDefinition::SubStates> &&
-        !std::is_same_v<StateDefinition1, StateDefinition2> &&
-        IsInContext<StateDefinition1, ContextDefinition>::value &&
-        IsInContext<StateDefinition2, ContextDefinition>::value
+template <typename _StateDef1, typename _StateDef2, typename _ContextDef>
+struct LCAImpl<_StateDef1, _StateDef2, _ContextDef, std::enable_if_t<
+        !std::is_void_v<typename _ContextDef::SubStates> &&
+        !std::is_same_v<_StateDef1, _StateDef2> &&
+        IsInContextRecursive<_StateDef1, _ContextDef>::value &&
+        IsInContextRecursive<_StateDef2, _ContextDef>::value
     >>
 {
-    using SubType = typename LCAImpl<StateDefinition1, StateDefinition2, typename ContextDefinition::SubStates>::Type;
-    using Type = typename Collapse<SubType, ContextDefinition>::Type;
+    using SubType = typename LCAImpl<_StateDef1, _StateDef2, typename _ContextDef::SubStates>::Type;
+    using Type = typename Collapse<SubType, _ContextDef>::Type;
 };
 
-template <typename StateDefinition1, typename StateDefinition2>
-using LCA = typename LCAImpl<StateDefinition1, StateDefinition2, typename StateDefinition1::SMD>::Type;
+template <typename _StateDef1, typename _StateDef2>
+using LCA = typename LCAImpl<_StateDef1, _StateDef2, typename _StateDef1::TopStateDef>::Type;
 
-template <typename StateDefinition, typename ContextDefinition, typename SuperContextDefinition, typename Enable = void>
+template <typename _StateDef, typename _ContextDef, typename _ContextDef, typename Enable = void>
 struct ContextImpl
 {
     using Type = void;
 };
 
-template <typename StateDefinition, typename ... ContextDefinition, typename SuperContextDefinition>
-struct ContextImpl<StateDefinition, std::tuple<ContextDefinition...>, SuperContextDefinition, void>
+template <typename _StateDef, typename ... _StateDefToCompare, typename _ContextDef>
+struct ContextImpl<_StateDef, std::tuple<_StateDefToCompare...>, _ContextDef, void>
 {
-    using Type = typename Collapse<typename ContextImpl<StateDefinition, ContextDefinition, SuperContextDefinition>::Type...>::Type;
+    using Type = typename Collapse<typename ContextImpl<_StateDef, _StateDefToCompare, _ContextDef>::Type...>::Type;
 };
 
-template <typename StateDefinition, typename ContextDefinition, typename SuperContextDefinition>
-struct ContextImpl<StateDefinition, ContextDefinition, typename SuperContextDefinition, std::enable_if_t<
-        !std::is_void_v<typename ContextDefinition::SubStates> &&
-        !std::is_same_v<StateDefinition, ContextDefinition> &&
-        IsInContext<StateDefinition, ContextDefinition>::value
+template <typename _StateDef, typename _StateDefToCompare, typename _ContextDef>
+struct ContextImpl<_StateDef, _StateDefToCompare, typename _ContextDef, std::enable_if_t<
+        !std::is_void_v<typename _StateDefToCompare::SubStates> &&
+        !std::is_same_v<_StateDef, _StateDefToCompare> &&
+        IsInContextRecursive<_StateDef, _StateDefToCompare>::value
     >>
 {
-    using SubType = typename ContextImpl<StateDefinition, typename ContextDefinition::SubStates, ContextDefinition>::Type;
-    using Type = typename Collapse<SubType, ContextDefinition>::Type;
+    using SubType = typename ContextImpl<_StateDef, typename _StateDefToCompare::SubStates, _StateDefToCompare>::Type;
+    using Type = typename Collapse<SubType, _StateDefToCompare>::Type;
 };
 
-template <typename StateDefinition, typename SuperContextDefinition>
-struct ContextImpl<StateDefinition, StateDefinition, SuperContextDefinition, void>
+template <typename _StateDef, typename _ContextDef>
+struct ContextImpl<_StateDef, _StateDef, _ContextDef, void>
 {
-    using Type = SuperContextDefinition;
+    using Type = _ContextDef;
 };
 
-template <typename StateDefinition, typename TopStateDefinition>
-using Context  = typename ContextImpl<StateDefinition, TopStateDefinition, TopStateDefinition>::Type;
+template <typename _StateDef, typename _TopStateDef>
+using Context  = typename ContextImpl<_StateDef, _TopStateDef, _TopStateDef>::Type;
 
-template <typename SourceStateDefinition, typename TargetStateDefinition>
+template <typename _SourceStateDef, typename _TargetStateDef>
 struct IsValidTransition
 {
-    static constexpr bool value = IsInContext<TargetStateDefinition, typename SourceStateDefinition::SMD>::value;
+    static constexpr bool value = IsInContextRecursive<_TargetStateDef, typename _SourceStateDef::TopStateDef>::value;
 };
 
-template <typename StateDefinition, typename TopStateDefinition>
-class StateCrtp : public basemodel::entitybases::EState
+template <typename _StateDef, typename _TopStateDef>
+class StateCrtp : public StateBase
 {
 public:
-    template <typename SubStateDefinition>
-    using State = StateCrtp<SubStateDefinition, TopStateDefinition>;
-    using SMD = TopStateDefinition;
-    //using ThisMixin = Mixin<StateDefinition, TopStateDefinition>;
+    template <typename _SubStateDef>
+    using State = StateCrtp<_SubStateDef, _TopStateDef>;
+    using TopStateDef = _TopStateDef;
     using Initial = void;
 
     StateCrtp() {
@@ -251,24 +242,24 @@ public:
         onExit();
     }
 
-    template <typename ContextDefinition>
+    template <typename _ContextDef>
     decltype(auto) context()  {
-        static_assert(IsInContext<StateDefinition, ContextDefinition>::value, "Requested context is not available in the state!");
-        return mixin().template context<ContextDefinition>();
+        static_assert(IsInContextRecursive<_StateDef, _ContextDef>::value, "Requested context is not available in the state!");
+        return mixin().template context<_ContextDef>();
     }
 
-    template <typename TargetStateDefinition>
-    const TypeErasedTransition<StateDefinition>* transition() {
-        static_assert(IsValidTransition<StateDefinition, TargetStateDefinition>::value);
-        return &regular_transition_<StateDefinition, TargetStateDefinition>;
+    template <typename _TargetStateDef>
+    const TypeErasedTransition<_StateDef>* transition() {
+        static_assert(IsValidTransition<_StateDef, _TargetStateDef>::value);
+        return &regular_transition_<_StateDef, _TargetStateDef>;
     }
 
-    const TypeErasedTransition<StateDefinition>* no_transition() {
-        return &no_transition_<StateDefinition>;
+    const TypeErasedTransition<_StateDef>* no_transition() {
+        return &no_transition_<_StateDef>;
     }
 
-    const TypeErasedTransition<StateDefinition>* condition_not_met() {
-        return &condition_not_met_<StateDefinition>;
+    const TypeErasedTransition<_StateDef>* condition_not_met() {
+        return &condition_not_met_<_StateDef>;
     }
 
     void onEntry() { }
@@ -276,69 +267,67 @@ public:
 
 private:
     decltype(auto) mixin() {
-        return static_cast<Mixin<StateDefinition, TopStateDefinition>&>(*this);
+        return static_cast<Mixin<_StateDef, _TopStateDef>&>(*this);
     }
 };
 
-template <typename StateDefinition>
+template <typename _StateDef>
 struct StateSpec
 {
-    using Type = StateDefinition;
+    using StateDef = _StateDef;
 };
 
-template <typename StateDefinitions, typename TopStateDefinition>
-class SubStatesHelper;
+template <typename _StateDefTuple, typename _TopStateDef>
+class StateTuple;
 
-template <typename ... StateDefinition, typename TopStateDefinition>
-struct SubStatesHelper<std::tuple<StateDefinition...>, TopStateDefinition>
+template <typename ... _StateDef, typename _TopStateDef>
+struct StateTuple<std::tuple<_StateDef...>, _TopStateDef>
 {
 public:
-    using Tuple = std::tuple<Mixin<StateDefinition, TopStateDefinition>...>;
-    using Variant = std::variant<Mixin<StateDefinition, TopStateDefinition>...>;
-    using Default = std::tuple_element_t<0, std::tuple<StateDefinition...>>;
-    template <typename SubStateDefinition>
+    using Tuple = std::tuple<Mixin<_StateDef, _TopStateDef>...>;
+    using Variant = std::variant<Mixin<_StateDef, _TopStateDef>...>;
+    using Default = std::tuple_element_t<0, std::tuple<_StateDef...>>;
+    template <typename _SubStateDef>
     using ContainingState = typename Collapse<
         std::conditional_t<
-            IsInContext<SubStateDefinition, StateDefinition>::value,
+            IsInContextRecursive<_SubStateDef, StateDefinition>::value,
             StateDefinition,
             void
         >...>::Type;
 };
 
 
-template <typename StateDefinition>
+template <typename _StateDef>
 class TopStateMixin;
 
-template <typename StateDefinition, typename TopStateDefinition>
-class StateMixin : public StateDefinition
+template <typename _StateDef, typename _TopStateDef>
+class StateMixin : public _StateDef
 {
 public:
-    using TopStateMixin = TopStateMixin<TopStateDefinition>;
-    using Definition = StateDefinition;
-    using ContextMixin = Mixin<Context<StateDefinition, TopStateDefinition>, TopStateDefinition>;
-    using ThisMixin = Mixin<StateDefinition, TopStateDefinition>;
+    using TopStateMixin = TopStateMixin<_TopStateDef>;
+    using ContextMixin = Mixin<Context<_StateDef, _TopStateDef>, _TopStateDef>;
 
     StateMixin(TopStateMixin& top_state_mixin, ContextMixin& context_mixin)
     : top_state_mixin_{top_state_mixin},
       context_mixin_{context_mixin}
     {}
 
-    template <typename Event>
-    bool handleEvent(const Event& e) {
-        if constexpr(HasReactionToEvent<StateDefinition, Event>::value) {
+    template <typename _Event>
+    bool handleEvent(const _Event& e) {
+        if constexpr(HasReactionToEvent<_StateDef, _Event>::value) {
             auto type_erased_transition = this->react(e);
             return type_erased_transition->execute(mixin());
         }
         return false;
     }
 
-    template <typename ContextDefinition>
-    ContextDefinition& context() {
-        if constexpr(std::is_same_v<ContextDefinition, StateDefinition>) {
+    template <typename _ContextDef>
+    _ContextDef& context() {
+        if constexpr(std::is_same_v<_ContextDef, _StateDef>) {
             return *this;
         }
         else {
-            return context_mixin_.template context<ContextDefinition>();
+            return context_mixin_.template context<_ContextDef>();
         }
     }
 
@@ -347,41 +336,41 @@ protected:
     ContextMixin& context_mixin_;
 
     decltype(auto) mixin() {
-        return static_cast<ThisMixin&>(*this);
+        return static_cast<Mixin<_StateDef, _TopStateDef>&>(*this);
     }
 };
 
-template <typename StateDefinition, typename TopStateDefinition>
-class CompositeStateMixin : public StateMixin<StateDefinition, TopStateDefinition>
+template <typename _StateDef, typename _TopStateDef>
+class CompositeStateMixin : public StateMixin<_StateDef, _TopStateDef>
 {
 public:
-    using SubStates = SubStatesHelper<typename StateDefinition::SubStates, TopStateDefinition>;
-    using Initial = typename Collapse<typename StateDefinition::Initial, typename SubStates::Default>::Type;
+    using SubStates = StateTuple<typename _StateDef::SubStates, _TopStateDef>;
+    using Initial = typename Collapse<typename _StateDef::Initial, typename SubStates::Default>::Type;
 
-    template <typename SubStateSpec>
+    template <typename _SubStateSpec>
     CompositeStateMixin(
         TopStateMixin& top_state_mixin,
         ContextMixin& context_mixin,
-        SubStateSpec spec,
-        std::enable_if_t<std::is_same_v<meta_type_t<typename SubStateSpec::Type, TopStateDefinition>, metamodel::entitytypes::CompositeStateType>>* = nullptr)
+        _SubStateSpec spec,
+        std::enable_if_t<std::is_same_v<meta_type_t<typename _SubStateSpec::StateDef, _TopStateDef>, CompositeStateType>>* = nullptr)
     : StateMixin(top_state_mixin, context_mixin),
       active_sub_state_{ 
-        std::in_place_type<Mixin<typename SubStates::ContainingState<typename SubStateSpec::Type>, TopStateDefinition>>,
+        std::in_place_type<Mixin<typename SubStates::ContainingState<typename _SubStateSpec::StateDef>, _TopStateDef>>,
         top_state_mixin,
         mixin(),
         spec
       }
     {}
 
-    template <typename SubStateSpec>
+    template <typename _SubStateSpec>
     CompositeStateMixin(
         TopStateMixin& top_state_mixin,
         ContextMixin& context_mixin,
-        SubStateSpec spec,
-        std::enable_if_t<std::is_same_v<meta_type_t<typename SubStateSpec::Type, TopStateDefinition>, metamodel::entitytypes::SimpleStateType>>* = nullptr)
+        _SubStateSpec spec,
+        std::enable_if_t<std::is_same_v<meta_type_t<typename _SubStateSpec::StateDef, _TopStateDef>, SimpleStateType>>* = nullptr)
     : StateMixin(top_state_mixin, context_mixin),
       active_sub_state_{ 
-        std::in_place_type<Mixin<typename SubStates::ContainingState<typename SubStateSpec::Type>, TopStateDefinition>>,
+        std::in_place_type<Mixin<typename SubStates::ContainingState<typename _SubStateSpec::StateDef>, _TopStateDef>>,
         top_state_mixin,
         mixin()
       }
@@ -390,7 +379,7 @@ public:
     CompositeStateMixin(
         TopStateMixin& top_state_mixin,
         ContextMixin& context_mixin,
-        StateSpec<StateDefinition> spec)
+        StateSpec<_StateDef> spec)
     : CompositeStateMixin(top_state_mixin, context_mixin, StateSpec<Initial>{})
     {}
 
@@ -400,8 +389,8 @@ public:
     : CompositeStateMixin(top_state_mixin, context_mixin, StateSpec<Initial>{})
     {}
 
-    template <typename Event>
-    bool handleEvent(const Event& e) {
+    template <typename _Event>
+    bool handleEvent(const _Event& e) {
         auto do_handle_event = [&](auto& active_sub_state){ return active_sub_state.handleEvent(e); };
         bool substate_handled_the_event = std::visit(do_handle_event, active_sub_state_);
         if(substate_handled_the_event) {
@@ -412,23 +401,23 @@ public:
         }
     }
 
-    template <typename TargetStateDefinition>
+    template <typename _TargetStateDef>
     void executeTransition() {
-        auto do_execute_transition = [](auto& active_sub_state){ active_sub_state.template executeTransition<TargetStateDefinition>(); };
+        auto do_execute_transition = [](auto& active_sub_state){ active_sub_state.template executeTransition<_TargetStateDef>(); };
         std::visit(do_execute_transition, active_sub_state_);       
     }
 
-    template <typename LCA, typename TargetStateDefinition>
+    template <typename _LCA, typename _TargetStateDef>
     void executeTransition() {
-        if constexpr (std::is_same_v<LCA, StateDefinition>) {
-            using Spec = StateSpec<TargetStateDefinition>;
-            using SubStateDefinition = SubStates::ContainingState<typename Spec::Type>;
-            active_sub_state_.emplace<Mixin<SubStateDefinition, typename SubStateDefinition::SMD>>(
+        if constexpr (std::is_same_v<_LCA, _StateDef>) {
+            using Spec = StateSpec<_TargetStateDef>;
+            using SubStateDefinition = SubStates::ContainingState<typename Spec::StateDef>;
+            active_sub_state_.emplace<Mixin<SubStateDefinition, typename SubStateDefinition::TopStateDef>>(
                 top_state_mixin_,
                 mixin());
         }
         else {
-            auto do_execute_transition = [](auto& active_sub_state){ active_sub_state.template executeTransition<LCA, TargetStateDefinition>(); };
+            auto do_execute_transition = [](auto& active_sub_state){ active_sub_state.template executeTransition<_LCA, _TargetStateDef>(); };
             std::visit(do_execute_transition, active_sub_state_);       
         }
     }
@@ -437,66 +426,66 @@ private:
     typename SubStates::Variant active_sub_state_;
 };
 
-template <typename StateDefinition, typename TopStateDefinition>
-class SimpleStateMixin : public StateMixin<StateDefinition, TopStateDefinition>
+template <typename _StateDef, typename _TopStateDef>
+class SimpleStateMixin : public StateMixin<_StateDef, _TopStateDef>
 {
 public:
     SimpleStateMixin(TopStateMixin& top_state_mixin, ContextMixin& context_mixin)
     : StateMixin(top_state_mixin, context_mixin)
     {}
 
-    template <typename TargetStateDefinition>
+    template <typename _TargetStateDef>
     void executeTransition() {
-        using LCA = LCA<StateDefinition, TargetStateDefinition>;
-        top_state_mixin_.template executeTransition<LCA, TargetStateDefinition>();             
+        using LCA = LCA<_StateDef, _TargetStateDef>;
+        top_state_mixin_.template executeTransition<LCA, _TargetStateDef>();             
     }
 
-    template <typename LCA, typename TargetStateDefinition>
+    template <typename _LCA, typename _TargetStateDef>
     void executeTransition() { }
 };
 
-template <typename TopStateDefinition>
-class TopState : public StateCrtp<TopStateDefinition, TopStateDefinition> , public basemodel::entitybases::TopState
+template <typename _TopStateDef>
+class TopState : public StateCrtp<_TopStateDef, _TopStateDef> , public TopStateBase
 {};
 
-template <typename TopStateDefinition>
+template <typename _TopStateDef>
 class StateMachine;
 
-template <typename StateDefinition>
-class TopStateMixin : public CompositeStateMixin<StateDefinition, StateDefinition>
+template <typename _StateDef>
+class TopStateMixin : public CompositeStateMixin<_StateDef, _StateDef>
 {
 public:
-    TopStateMixin(StateMachine<StateDefinition>& state_machine)
+    TopStateMixin(StateMachine<_StateDef>& state_machine)
     : CompositeStateMixin(*this, *this),
       state_machine_{state_machine}
     {}
 
-    template <typename ContextDefinition>
-    ContextDefinition& context();
+    template <typename _ContextDef>
+    _ContextDef& context();
 
 private:
-    StateMachine<StateDefinition>& state_machine_;
+    StateMachine<_StateDef>& state_machine_;
 };
 
-template <typename Definition, typename TopStateDefinition, typename MetaType>
+template <typename _StateDef, typename _TopStateDef, typename _MetaType>
 struct MixinImpl;
 
-template <typename Definition, typename TopStateDefinition>
-struct MixinImpl<Definition, TopStateDefinition, metamodel::entitytypes::SimpleStateType>
+template <typename _StateDef, typename _TopStateDef>
+struct MixinImpl<_StateDef, _TopStateDef, SimpleStateType>
 {
-    using Type = SimpleStateMixin<Definition, TopStateDefinition>;
+    using Type = SimpleStateMixin<_StateDef, _TopStateDef>;
 };
 
-template <typename Definition, typename TopStateDefinition>
-struct MixinImpl<Definition, TopStateDefinition, metamodel::entitytypes::CompositeStateType>
+template <typename _StateDef, typename _TopStateDef>
+struct MixinImpl<_StateDef, _TopStateDef, CompositeStateType>
 {
-    using Type = CompositeStateMixin<Definition, TopStateDefinition>;
+    using Type = CompositeStateMixin<_StateDef, _TopStateDef>;
 };
 
-template <typename Definition>
-struct MixinImpl<Definition, Definition, metamodel::entitytypes::TopStateType>
+template <typename _StateDef>
+struct MixinImpl<_StateDef, _StateDef, TopStateType>
 {
-    using Type = TopStateMixin<Definition>;
+    using Type = TopStateMixin<_StateDef>;
 };
 
 

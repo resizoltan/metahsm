@@ -6,7 +6,7 @@ namespace metahsm {
 class StateMachineBase
 {};
 
-template <typename TopStateDefinition>
+template <typename _TopStateDef>
 class StateMachine
 {
 public:
@@ -14,13 +14,13 @@ public:
     : top_state_(*this)
     {}
 
-    template <typename Event>
-    bool dispatch(const Event& event) {
+    template <typename _Event>
+    bool dispatch(const _Event& event) {
         return top_state_.handleEvent(event);
     }
 
 private:
-    TopStateMixin<TopStateDefinition> top_state_;
+    TopStateMixin<_TopStateDef> top_state_;
 };
 
 }
