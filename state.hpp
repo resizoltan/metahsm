@@ -97,6 +97,15 @@ public:
     }
 };
 
+template <typename _SourceStateDef>
+class NoReactionDefined : public TypeErasedTransition<_SourceStateDef>
+{
+public:
+    bool execute(Mixin<_SourceStateDef, typename _SourceStateDef::TopStateDef>&) const override {
+        return false;
+    }
+};
+
 template <typename _SourceStateDef, typename _TargetStateDef>
 const RegularTransition<_SourceStateDef, _TargetStateDef> regular_transition_;
 
@@ -285,7 +294,7 @@ public:
         return &condition_not_met_<_StateDef>;
     }
 
-private:
+protected:
     decltype(auto) mixin() {
         return static_cast<Mixin<_StateDef, _TopStateDef>&>(*this);
     }
@@ -354,10 +363,6 @@ public:
 protected:
     TopStateMixin& top_state_mixin_;
     ContextMixin& context_mixin_;
-
-    decltype(auto) mixin() {
-        return static_cast<Mixin<_StateDef, _TopStateDef>&>(*this);
-    }
 };
 
 template <typename _StateDef, typename _TopStateDef>
@@ -394,12 +399,7 @@ public:
     bool handleEvent(const _Event& e) {
         auto do_handle_event = [&](auto& active_sub_state){ return active_sub_state.handleEvent(e); };
         bool substate_handled_the_event = std::visit(do_handle_event, active_sub_state_);
-        if(substate_handled_the_event) {
-            return true;
-        }
-        else {
-            return StateMixin::handleEvent<_Event>(e);
-        }
+        return substate_handled_the_event || StateMixin::handleEvent<_Event>(e);
     }
 
     template <typename _TargetStateDef>
