@@ -187,7 +187,7 @@ struct LCAImpl<_StateDef1, _StateDef2, _ContextDef, std::enable_if_t<
 template <typename _StateDef1, typename _StateDef2>
 using LCA = typename LCAImpl<_StateDef1, _StateDef2, typename _StateDef1::TopStateDef>::Type;
 
-template <typename _StateDef, typename _ContextDef, typename _ContextDef, typename Enable = void>
+template <typename _StateDef, typename _StateDefToCompare, typename _ContextDef, typename Enable = void>
 struct ContextImpl
 {
     using Type = void;
@@ -219,6 +219,36 @@ struct ContextImpl<_StateDef, _StateDef, _ContextDef, void>
 template <typename _StateDef, typename _TopStateDef>
 using Context  = typename ContextImpl<_StateDef, _TopStateDef, _TopStateDef>::Type;
 
+template <typename _StateDef, typename _SFINAE = void>
+struct InitialSpecified : std::false_type {};
+
+template <typename _StateDef>
+struct InitialSpecified<_StateDef, std::void_t<typename _StateDef::Initial>> : std::true_type {};
+
+template <typename _StateDef, typename _TopStateDef, typename _Enable = void>
+struct InitialRecursive;
+
+template <typename _StateDef, typename _TopStateDef>
+struct InitialRecursive<_StateDef, _TopStateDef, std::enable_if_t<std::is_same_v<SimpleStateType, meta_type_t<_StateDef, _TopStateDef>>>>
+{
+    using Type = _StateDef;
+};
+
+template <typename _StateDef, typename _TopStateDef>
+struct InitialRecursive<_StateDef, _TopStateDef, std::enable_if_t<InitialSpecified<_StateDef>::value>>
+{
+    using Type = typename InitialRecursive<typename _StateDef::Initial, _TopStateDef>::Type;
+};
+
+template <typename _StateDef, typename _TopStateDef>
+struct InitialRecursive<_StateDef, _TopStateDef, std::enable_if_t<
+        !InitialSpecified<_StateDef>::value
+     && !std::is_same_v<SimpleStateType, meta_type_t<_StateDef, _TopStateDef>>
+    >>
+{
+    using Type = typename InitialRecursive<typename Mixin<_StateDef, _TopStateDef>::DefaultInitial, _TopStateDef>::Type;
+};
+
 template <typename _SourceStateDef, typename _TargetStateDef>
 struct IsValidTransition
 {
@@ -229,18 +259,11 @@ template <typename _StateDef, typename _TopStateDef>
 class StateCrtp : public StateBase
 {
 public:
+    using StateDef = _StateDef;
+    using TopStateDef = _TopStateDef;
+
     template <typename _SubStateDef>
     using State = StateCrtp<_SubStateDef, _TopStateDef>;
-    using TopStateDef = _TopStateDef;
-    using Initial = void;
-
-    StateCrtp() {
-        onEntry();
-    }
-
-    ~StateCrtp() {
-        onExit();
-    }
 
     template <typename _ContextDef>
     decltype(auto) context()  {
@@ -261,9 +284,6 @@ public:
     const TypeErasedTransition<_StateDef>* condition_not_met() {
         return &condition_not_met_<_StateDef>;
     }
-
-    void onEntry() { }
-    void onExit() { }
 
 private:
     decltype(auto) mixin() {
@@ -286,12 +306,12 @@ struct StateTuple<std::tuple<_StateDef...>, _TopStateDef>
 public:
     using Tuple = std::tuple<Mixin<_StateDef, _TopStateDef>...>;
     using Variant = std::variant<Mixin<_StateDef, _TopStateDef>...>;
-    using Default = std::tuple_element_t<0, std::tuple<_StateDef...>>;
+    using First = std::tuple_element_t<0, std::tuple<_StateDef...>>;
     template <typename _SubStateDef>
     using ContainingState = typename Collapse<
         std::conditional_t<
-            IsInContextRecursive<_SubStateDef, StateDefinition>::value,
-            StateDefinition,
+            IsInContextRecursive<_SubStateDef, _StateDef>::value,
+            _StateDef,
             void
         >...>::Type;
 };
@@ -345,48 +365,29 @@ class CompositeStateMixin : public StateMixin<_StateDef, _TopStateDef>
 {
 public:
     using SubStates = StateTuple<typename _StateDef::SubStates, _TopStateDef>;
-    using Initial = typename Collapse<typename _StateDef::Initial, typename SubStates::Default>::Type;
+    using DefaultInitial = typename SubStates::First;
 
-    template <typename _SubStateSpec>
-    CompositeStateMixin(
-        TopStateMixin& top_state_mixin,
-        ContextMixin& context_mixin,
-        _SubStateSpec spec,
-        std::enable_if_t<std::is_same_v<meta_type_t<typename _SubStateSpec::StateDef, _TopStateDef>, CompositeStateType>>* = nullptr)
+    template <typename _SubStateSpec, typename _Initial = typename SubStates::ContainingState<typename _SubStateSpec::StateDef>>
+    CompositeStateMixin(TopStateMixin& top_state_mixin, ContextMixin& context_mixin, _SubStateSpec spec,
+        std::enable_if_t<std::is_same_v<meta_type_t<_Initial, _TopStateDef>, CompositeStateType>>* = nullptr)
     : StateMixin(top_state_mixin, context_mixin),
       active_sub_state_{ 
-        std::in_place_type<Mixin<typename SubStates::ContainingState<typename _SubStateSpec::StateDef>, _TopStateDef>>,
+        std::in_place_type<Mixin<_Initial, _TopStateDef>>,
         top_state_mixin,
         mixin(),
         spec
       }
     {}
 
-    template <typename _SubStateSpec>
-    CompositeStateMixin(
-        TopStateMixin& top_state_mixin,
-        ContextMixin& context_mixin,
-        _SubStateSpec spec,
-        std::enable_if_t<std::is_same_v<meta_type_t<typename _SubStateSpec::StateDef, _TopStateDef>, SimpleStateType>>* = nullptr)
+    template <typename _SubStateSpec, typename _Initial = typename SubStates::ContainingState<typename _SubStateSpec::StateDef>>
+    CompositeStateMixin(TopStateMixin& top_state_mixin, ContextMixin& context_mixin, _SubStateSpec spec,
+        std::enable_if_t<std::is_same_v<meta_type_t<_Initial, _TopStateDef>, SimpleStateType>>* = nullptr)
     : StateMixin(top_state_mixin, context_mixin),
       active_sub_state_{ 
-        std::in_place_type<Mixin<typename SubStates::ContainingState<typename _SubStateSpec::StateDef>, _TopStateDef>>,
+        std::in_place_type<Mixin<_Initial, _TopStateDef>>,
         top_state_mixin,
         mixin()
       }
-    {}
-
-    CompositeStateMixin(
-        TopStateMixin& top_state_mixin,
-        ContextMixin& context_mixin,
-        StateSpec<_StateDef> spec)
-    : CompositeStateMixin(top_state_mixin, context_mixin, StateSpec<Initial>{})
-    {}
-
-    CompositeStateMixin(
-        TopStateMixin& top_state_mixin,
-        ContextMixin& context_mixin)
-    : CompositeStateMixin(top_state_mixin, context_mixin, StateSpec<Initial>{})
     {}
 
     template <typename _Event>
@@ -397,7 +398,7 @@ public:
             return true;
         }
         else {
-            return StateMixin::handleEvent<Event>(e);
+            return StateMixin::handleEvent<_Event>(e);
         }
     }
 
@@ -410,11 +411,18 @@ public:
     template <typename _LCA, typename _TargetStateDef>
     void executeTransition() {
         if constexpr (std::is_same_v<_LCA, _StateDef>) {
-            using Spec = StateSpec<_TargetStateDef>;
-            using SubStateDefinition = SubStates::ContainingState<typename Spec::StateDef>;
-            active_sub_state_.emplace<Mixin<SubStateDefinition, typename SubStateDefinition::TopStateDef>>(
-                top_state_mixin_,
-                mixin());
+            using Initial = SubStates::ContainingState<_TargetStateDef>;
+            if constexpr(std::is_same_v<meta_type_t<Initial, _TopStateDef>, SimpleStateType>) {
+                active_sub_state_.emplace<Mixin<Initial, _TopStateDef>>(
+                    top_state_mixin_,
+                    mixin());
+            }
+            else {
+                active_sub_state_.emplace<Mixin<Initial, _TopStateDef>>(
+                    top_state_mixin_,
+                    mixin(),
+                    StateSpec<_TargetStateDef>{});
+            }
         }
         else {
             auto do_execute_transition = [](auto& active_sub_state){ active_sub_state.template executeTransition<_LCA, _TargetStateDef>(); };
@@ -437,7 +445,7 @@ public:
     template <typename _TargetStateDef>
     void executeTransition() {
         using LCA = LCA<_StateDef, _TargetStateDef>;
-        top_state_mixin_.template executeTransition<LCA, _TargetStateDef>();             
+        top_state_mixin_.template executeTransition<LCA, typename InitialRecursive<_TargetStateDef, _TopStateDef>::Type>();             
     }
 
     template <typename _LCA, typename _TargetStateDef>
@@ -456,7 +464,7 @@ class TopStateMixin : public CompositeStateMixin<_StateDef, _StateDef>
 {
 public:
     TopStateMixin(StateMachine<_StateDef>& state_machine)
-    : CompositeStateMixin(*this, *this),
+    : CompositeStateMixin(*this, *this, StateSpec<typename InitialRecursive<_StateDef, _StateDef>::Type>{}),
       state_machine_{state_machine}
     {}
 
