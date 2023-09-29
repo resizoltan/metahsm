@@ -4,9 +4,59 @@
 #include <variant>
 
 #include "type_algorithms.hpp"
-#include "metamodel.hpp"
 
 namespace metahsm {
+
+struct EntityBase {};
+struct StateBase : EntityBase {};
+struct SimpleStateBase : StateBase {};
+struct CompositeStateBase : StateBase {};
+struct TopStateBase : CompositeStateBase {};
+
+template <typename _Entity, typename _SFINAE = void>
+struct is_simple_state : std::true_type {};
+
+template <typename _Entity>
+struct is_simple_state<_Entity, std::void_t<std::tuple<typename _Entity::SubStates>>> : std::false_type {};
+
+template <typename _Entity>
+struct is_simple_state<_Entity, std::void_t<std::tuple<typename _Entity::Regions>>> : std::false_type {};
+
+template <typename _Entity>
+constexpr bool is_simple_state_v = is_simple_state<_Entity>::value;
+
+template <typename _Entity, typename _SFINAE = void>
+struct is_composite_state : std::false_type {};
+
+template <typename _Entity>
+struct is_composite_state<_Entity, std::void_t<std::tuple<typename _Entity::SubStates>>> : std::true_type {};
+
+template <typename _Entity>
+struct is_composite_state<_Entity, std::void_t<std::tuple<typename _Entity::Regions>>> : std::false_type {};
+
+template <typename _Entity>
+constexpr bool is_composite_state_v = is_composite_state<_Entity>::value;
+
+template <typename _Entity, typename _SFINAE = void>
+struct is_orthogonal_state : std::false_type {};
+
+template <typename _Entity>
+struct is_orthogonal_state<_Entity, std::void_t<std::tuple<typename _Entity::SubStates>>> : std::true_type {};
+
+template <typename _Entity>
+struct is_orthogonal_state<_Entity, std::void_t<std::tuple<typename _Entity::Regions>>> : std::false_type {};
+
+template <typename _Entity>
+constexpr bool is_orthogonal_state_v = is_orthogonal_state<_Entity>::value;
+
+template <typename _Entity, typename _Enable = void>
+struct is_top_state : std::false_type {};
+
+template <typename _Entity>
+struct is_top_state<_Entity, std::enable_if_t<std::is_base_of_v<TopStateBase, _Entity>>> : std::true_type {};
+
+template <typename _Entity>
+constexpr bool is_top_state_v = is_top_state<_Entity>::value;
 
 template <typename _StateDef>
 struct state_spec
@@ -16,10 +66,6 @@ struct state_spec
 
 template <typename _StateDef>
 using state_spec_t = typename state_spec<_StateDef>::type;
-
-template <typename _StateDef>
-using meta_type_t = typename MetaType<_StateDef>::Type;
-
 
 template <typename _StateDef, typename _Event, typename _Enable = void>
 struct has_reaction_to_event : public std::false_type
@@ -136,36 +182,33 @@ template <typename _StateDef, typename _Enable = void>
 struct initial_recursive;
 
 template <typename _StateDef>
-struct initial_recursive<_StateDef, std::enable_if_t<std::is_same_v<SimpleStateType, meta_type_t<_StateDef>>>>
+using initial_recursive_t = typename initial_recursive<_StateDef>::type;
+
+template <typename _StateDef>
+struct initial_recursive<_StateDef, std::enable_if_t<is_simple_state_v<_StateDef>>>
 {
     using type = _StateDef;
 };
 
 template <typename _StateDef>
-using initial_recursive_t = typename initial_recursive<_StateDef>::type;
-
-template <typename _StateDef>
 struct initial_recursive<_StateDef, std::enable_if_t<is_initial_specified_v<_StateDef>>>
 {
-    using type = initial_recursive<typename _StateDef::Initial>;
+    using type = initial_recursive_t<typename _StateDef::Initial>;
 };
 
 template <typename _StateDef>
 struct initial_recursive<_StateDef, std::enable_if_t<
-        !is_initial_specified_v<_StateDef>
-     && !std::is_same_v<SimpleStateType, meta_type_t<_StateDef>>
-    >>
+        !is_initial_specified_v<_StateDef> && !is_simple_state_v<_StateDef>>>
 {
     using type = initial_recursive_t<std::tuple_element_t<0, typename _StateDef::SubStates>>;
 };
 
 
-
 template <typename _StateDefTuple, typename _SubStateDef>
-class containing_state;
+class direct_substate;
 
 template <typename ... _StateDef, typename _SubStateDef>
-struct containing_state<std::tuple<_StateDef...>, _SubStateDef>
+struct direct_substate<std::tuple<_StateDef...>, _SubStateDef>
 {
     using type = typename collapse<
         std::conditional_t<
@@ -176,11 +219,11 @@ struct containing_state<std::tuple<_StateDef...>, _SubStateDef>
 };
 
 template <typename _StateDefTuple, typename _SubStateDef>
-using containing_state_t = typename containing_state<_StateDefTuple, _SubStateDef>::type;
+using direct_substate_t = typename direct_substate<_StateDefTuple, _SubStateDef>::type;
 
 
 
-template <typename _StateDef, typename _MetaType>
+template <typename _StateDef, typename _Enable = void>
 struct mixin;
 
 template <typename _StateDef>
@@ -193,25 +236,25 @@ template <typename _StateDef>
 struct TopStateMixin;
 
 template <typename _StateDef>
-struct mixin<_StateDef, SimpleStateType>
+struct mixin<_StateDef, std::enable_if_t<is_simple_state_v<_StateDef>>>
 {
     using type = SimpleStateMixin<_StateDef>;
 };
 
 template <typename _StateDef>
-struct mixin<_StateDef, CompositeStateType>
+struct mixin<_StateDef, std::enable_if_t<is_composite_state_v<_StateDef> && !is_top_state_v<_StateDef>>>
 {
     using type = CompositeStateMixin<_StateDef>;
 };
 
 template <typename _StateDef>
-struct mixin<_StateDef, TopStateType>
+struct mixin<_StateDef, std::enable_if_t<is_top_state_v<_StateDef>>>
 {
     using type = TopStateMixin<_StateDef>;
 };
 
 
 template <typename _StateDef>
-using mixin_t = typename mixin<_StateDef, meta_type_t<_StateDef>>::type;
+using mixin_t = typename mixin<_StateDef>::type;
 
 }

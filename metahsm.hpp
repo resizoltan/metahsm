@@ -116,9 +116,6 @@ protected:
 //=====================================================================================================//
 
 template <typename _StateDef>
-class TopStateMixin;
-
-template <typename _StateDef>
 class StateMixin : public _StateDef
 {
 public:
@@ -170,9 +167,9 @@ class CompositeStateMixin : public StateMixin<_StateDef>
 public:
     using SubStates = typename _StateDef::SubStates;
 
-    template <typename _SubStateSpec, typename _Initial = containing_state_t<SubStates, typename _SubStateSpec::StateDef>>
+    template <typename _SubStateSpec, typename _Initial = direct_substate_t<SubStates, typename _SubStateSpec::StateDef>>
     CompositeStateMixin(TopStateMixin& top_state_mixin, ContextMixin& context_mixin, _SubStateSpec spec,
-        std::enable_if_t<std::is_same_v<meta_type_t<_Initial>, CompositeStateType>>* = nullptr)
+        std::enable_if_t<is_composite_state_v<_Initial>>* = nullptr)
     : StateMixin(top_state_mixin, context_mixin),
       active_sub_state_{ 
         std::in_place_type<mixin_t<_Initial>>,
@@ -182,9 +179,9 @@ public:
       }
     {}
 
-    template <typename _SubStateSpec, typename _Initial = containing_state_t<SubStates, typename _SubStateSpec::StateDef>>
+    template <typename _SubStateSpec, typename _Initial = direct_substate_t<SubStates, typename _SubStateSpec::StateDef>>
     CompositeStateMixin(TopStateMixin& top_state_mixin, ContextMixin& context_mixin, _SubStateSpec spec,
-        std::enable_if_t<std::is_same_v<meta_type_t<_Initial>, SimpleStateType>>* = nullptr)
+        std::enable_if_t<is_simple_state_v<_Initial>>* = nullptr)
     : StateMixin(top_state_mixin, context_mixin),
       active_sub_state_{ 
         std::in_place_type<mixin_t<_Initial>>,
@@ -209,8 +206,8 @@ public:
     template <typename _LCA, typename _TargetStateDef>
     void executeTransition() {
         if constexpr (std::is_same_v<_LCA, _StateDef>) {
-            using Initial = containing_state_t<SubStates, _TargetStateDef>;
-            if constexpr(std::is_same_v<meta_type_t<Initial>, SimpleStateType>) {
+            using Initial = direct_substate_t<SubStates, _TargetStateDef>;
+            if constexpr(is_simple_state_v<Initial>) {
                 active_sub_state_.emplace<mixin_t<Initial>>(
                     top_state_mixin_,
                     mixin());

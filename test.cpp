@@ -7,7 +7,7 @@ using namespace metahsm;
 class Event1 {};
 
 struct MyTopState : public TopState<MyTopState> {
-    struct State0 : public State<State0> {
+    struct Region0 : public State<Region0> {
         int i;
 
         auto react(Event1 event) {
@@ -35,7 +35,26 @@ struct MyTopState : public TopState<MyTopState> {
         };
         using SubStates = std::tuple<State1, State2>;
     };
-    using SubStates = std::tuple<State0>;
+    struct Region1 : public State<Region1> {
+        int i;
+
+        auto react(Event1 event) {
+            std::cout << "state0" << std::endl;
+            return no_transition();
+        }
+
+        struct State3 : public State<State3> {
+            int i = 0;
+            auto react(Event1 event) {
+                i = 1;
+                if(i==1) return condition_not_met();
+                std::cout << "state1" << std::endl;
+                return no_transition();
+            }
+        };
+        using SubStates = std::tuple<State3>;
+    };
+    using SubStates = std::tuple<Region0, Region1>;
 };
 StateMachine<MyTopState> state_machine;
 int main(int argc, char *argv[]) {
