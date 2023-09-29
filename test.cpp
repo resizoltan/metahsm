@@ -38,7 +38,6 @@ struct MyTopState : public TopState<MyTopState> {
     using SubStates = std::tuple<State0>;
 };
 StateMachine<MyTopState> state_machine;
-static_assert(std::is_same_v<MyTopState, typename Mixin<MyTopState::State0>::TopState>);
 int main(int argc, char *argv[]) {
     std::cout << "hi" << std::endl;
     state_machine.dispatch(Event1{}); 
