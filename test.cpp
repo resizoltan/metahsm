@@ -7,13 +7,13 @@ using namespace metahsm;
 class Event1 {};
 
 struct MyTopState : public TopState<MyTopState> {
+
+    auto react(Event1 event) {
+        std::cout << "state0" << std::endl;
+        return transition<Fork<Region0::State2, Region1::State3>>();
+    }
     struct Region0 : public State<Region0> {
         int i;
-
-        auto react(Event1 event) {
-            std::cout << "state0" << std::endl;
-            return transition<State2>();
-        }
 
         struct State1 : public State<State1> {
             int i = 0;
@@ -57,6 +57,13 @@ struct MyTopState : public TopState<MyTopState> {
     using SubStates = std::tuple<Region0, Region1>;
 };
 StateMachine<MyTopState> state_machine;
+template <typename T1, typename T2>
+struct assert_same {
+    static_assert(std::is_same_v<T1, T2>);
+};
+
+assert_same<direct_substate_to_enter_t<MyTopState, std::tuple<MyTopState::Region0::State2>>, MyTopState::Region0> ass;
+TopStateMixin<MyTopState> ts{state_machine};
 int main(int argc, char *argv[]) {
     std::cout << "hi" << std::endl;
     state_machine.dispatch(Event1{}); 
