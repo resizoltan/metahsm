@@ -103,13 +103,24 @@ template <typename _StateDef>
 class StateMixin : public _StateDef
 {
 public:
+    using StateDef = _StateDef;
     using TopStateDef = typename decltype(_StateDef::top_state_spec())::type;
     using SuperStateDef = super_state_t<_StateDef>;
     using SuperStateMixin = mixin_t<SuperStateDef>;
 
     StateMixin(SuperStateMixin& super_state_mixin)
     : super_state_mixin_{super_state_mixin}
-    {}
+    {
+        if constexpr (has_entry_action_v<_StateDef>) {
+            this->on_entry();
+        }
+    }
+
+    ~StateMixin() {
+        if constexpr (has_exit_action_v<_StateDef>) {
+            this->on_exit();
+        }    
+    }
 
     template <typename _Event>
     const TypeErasedTransition<TopStateDef>* handleEvent(const _Event& e) {
@@ -177,7 +188,9 @@ public:
 
     template <typename _TargetStateDef>
     void executeTransition() {
-        auto is_target_in_context = [&](auto& active_sub_state) { return is_in_context_recursive_v<_TargetStateDef, decltype(active_sub_state)>; };
+        auto is_target_in_context = [&](auto& active_sub_state) { 
+            return is_in_context_recursive_v<_TargetStateDef, typename std::remove_reference_t<decltype(active_sub_state)>::StateDef>; 
+        };
 
         if(std::visit(is_target_in_context, active_sub_state_)) {
             auto do_execute_transition = [](auto& active_sub_state){ active_sub_state.template executeTransition<_TargetStateDef>(); };

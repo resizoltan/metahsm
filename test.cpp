@@ -12,11 +12,36 @@ struct MyTopState : public TopState<MyTopState> {
         std::cout << "mytopstate" << std::endl;
         return transition<Region0::State2>();
     }
+
+    void on_entry() {
+        std::cout << "entry: mytopstate" << std::endl;
+    }
+
+    void on_exit() {
+        std::cout << "exit: mytopstate" << std::endl;
+    }
+
     struct Region0 : public State<Region0> {
         int i;
 
+        void on_entry() {
+            std::cout << "entry: region0" << std::endl;
+        }
+
+        void on_exit() {
+            std::cout << "exit: region0" << std::endl;
+        }
+
         struct State1 : public State<State1> {
             int i = 0;
+
+            void on_entry() {
+                std::cout << "entry: state1" << std::endl;
+            }
+
+            void on_exit() {
+                std::cout << "exit: state1" << std::endl;
+            }
             auto react(Event1 event) {
                 context<State1>();
                 i = 1;
@@ -27,6 +52,14 @@ struct MyTopState : public TopState<MyTopState> {
         };
 
         struct State2 : public State<State2> {
+
+            void on_entry() {
+                std::cout << "entry: state2" << std::endl;
+            }
+
+            void on_exit() {
+                std::cout << "exit: state2" << std::endl;
+            }
             auto react(Event1 event) {
                 //context<State1>().i = 0;
                 std::cout << "state2" << std::endl;
@@ -38,6 +71,14 @@ struct MyTopState : public TopState<MyTopState> {
     struct Region1 : public State<Region1> {
         int i;
 
+
+        void on_entry() {
+            std::cout << "entry: region1" << std::endl;
+        }
+
+        void on_exit() {
+            std::cout << "exit: region1" << std::endl;
+        }
         auto react(Event1 event) {
             std::cout << "region1" << std::endl;
             return no_transition();
@@ -45,10 +86,18 @@ struct MyTopState : public TopState<MyTopState> {
 
         struct State3 : public State<State3> {
             int i = 0;
+
+            void on_entry() {
+                std::cout << "entry: state3" << std::endl;
+            }
+
+            void on_exit() {
+                std::cout << "exit: state3" << std::endl;
+            }
             auto react(Event1 event) {
                 i = 1;
                 if(i==1) return condition_not_met();
-                std::cout << "state1" << std::endl;
+                std::cout << "state3" << std::endl;
                 return no_transition();
             }
         };
@@ -57,13 +106,6 @@ struct MyTopState : public TopState<MyTopState> {
     using SubStates = std::tuple<Region0, Region1>;
 };
 StateMachine<MyTopState> state_machine;
-template <typename T1, typename T2>
-struct assert_same {
-    static_assert(std::is_same_v<T1, T2>);
-};
-static_assert(is_top_state_v<typename decltype(MyTopState::Region0::top_state_spec())::type>);
-assert_same<super_state_t<MyTopState::Region0>, MyTopState> ass;
-TopStateMixin<MyTopState> ts{state_machine};
 int main(int argc, char *argv[]) {
     std::cout << "hi" << std::endl;
     state_machine.dispatch(Event1{}); 

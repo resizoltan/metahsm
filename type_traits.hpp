@@ -73,7 +73,7 @@ struct state_spec
 template <typename _StateDef>
 using state_spec_t = typename state_spec<_StateDef>::type;
 
-template <typename _StateDef, typename _Event, typename _Enable = void>
+template <typename _StateDef, typename _Event, typename _SFINAE = void>
 struct has_reaction_to_event : public std::false_type
 {};
 
@@ -84,6 +84,30 @@ struct has_reaction_to_event<_StateDef, _Event, std::void_t<std::is_invocable<de
 
 template <typename _StateDef, typename _Event>
 constexpr bool has_reaction_to_event_v = has_reaction_to_event<_StateDef, _Event>::value;
+
+template <typename _StateDef, typename _SFINAE = void>
+struct has_entry_action : public std::false_type
+{};
+
+template <typename _StateDef>
+struct has_entry_action<_StateDef, std::void_t<std::is_invocable<decltype(&_StateDef::on_entry), _StateDef&>>>
+: std::true_type
+{};
+
+template <typename _StateDef>
+constexpr bool has_entry_action_v = has_entry_action<_StateDef>::value;
+
+template <typename _StateDef, typename _SFINAE = void>
+struct has_exit_action : public std::false_type
+{};
+
+template <typename _StateDef>
+struct has_exit_action<_StateDef, std::void_t<std::is_invocable<decltype(&_StateDef::on_exit), _StateDef&>>>
+: std::true_type
+{};
+
+template <typename _StateDef>
+constexpr bool has_exit_action_v = has_exit_action<_StateDef>::value;
 
 template <typename _StateDef, typename _ContextDef, typename Enable = void>
 struct is_in_context_recursive : std::false_type
