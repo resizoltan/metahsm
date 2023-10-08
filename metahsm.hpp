@@ -20,15 +20,15 @@ struct TypeErasedTransition
     : reacted{reacted}
     {}
     bool reacted;
-    virtual void execute(mixin_t<_TopStateDef>& source) const {};
+    virtual void execute(mixin_t<_TopStateDef>&) const {};
 };
 
 template <typename _TopStateDef, typename _TargetStateDef>
 struct RegularTransition : public TypeErasedTransition<_TopStateDef>
 {
     using TypeErasedTransition<_TopStateDef>::TypeErasedTransition;
-    void execute(mixin_t<_TopStateDef>& source) const override {
-        source.template executeTransition<_TargetStateDef>();
+    void execute(mixin_t<_TopStateDef>& top_state) const override {
+        top_state.template executeTransition<_TargetStateDef>();
     }
 };
 
@@ -36,7 +36,6 @@ template <typename _TopStateDef>
 struct NoTransition : public TypeErasedTransition<_TopStateDef>
 {
     using TypeErasedTransition<_TopStateDef>::TypeErasedTransition;
-    void execute(mixin_t<_TopStateDef>&) const override { }
 };
 
 template <typename _TopStateDef, typename _TargetStateDef>
@@ -68,14 +67,14 @@ public:
         return this->mixin().template context<_ContextDef>();
     }
 
-    template <typename ... _TargetStateDef>
+    template <typename _TargetStateDef>
     const TypeErasedTransition<TopStateDef>* transition() {
         //(static_assert(is_in_context_recursive_v<_TargetStateDef, TopStateDef>),...);
-        return &regular_transition_<TopStateDef, std::tuple<_TargetStateDef...>>;
+        return &regular_transition_<TopStateDef,_TargetStateDef>;
     }
 
     const TypeErasedTransition<TopStateDef>* no_transition() {
-        return &no_reaction_<TopStateDef>;
+        return &no_transition_<TopStateDef>;
     }
 
     const TypeErasedTransition<TopStateDef>* condition_not_met() {
@@ -91,14 +90,6 @@ public:
     {
         return state_spec<TopStateDef>{};
     }
-};
-
-struct ForkBase
-{};
-
-template <typename ... _StateDef>
-struct Fork : ForkBase {
-    using StateDefs = std::tuple<_StateDef...>;
 };
 
 //=====================================================================================================//
@@ -186,13 +177,13 @@ public:
 
     template <typename _TargetStateDef>
     void executeTransition() {
-        auto do_execute_transition = [](auto& active_sub_state){ active_sub_state.template executeTransition<_TargetStateDef>(); };
-        std::visit(do_execute_transition, active_sub_state_);       
-    }
+        auto is_target_in_context = [&](auto& active_sub_state) { return is_in_context_recursive_v<_TargetStateDef, decltype(active_sub_state)>; };
 
-    template <typename _LCA, typename _TargetStateDef>
-    void executeTransition() {
-        if constexpr (std::is_same_v<_LCA, _StateDef>) {
+        if(std::visit(is_target_in_context, active_sub_state_)) {
+            auto do_execute_transition = [](auto& active_sub_state){ active_sub_state.template executeTransition<_TargetStateDef>(); };
+            std::visit(do_execute_transition, active_sub_state_); 
+        }
+        else {
             using Initial = direct_substate_to_enter_t<_StateDef, _TargetStateDef>;
             if constexpr(is_simple_state_v<Initial>) {
                 active_sub_state_.template emplace<mixin_t<Initial>>(
@@ -201,12 +192,8 @@ public:
             else {
                 active_sub_state_.template emplace<mixin_t<Initial>>(
                     this->mixin(),
-                    state_spec_t<_TargetStateDef>{});
+                    state_spec<_TargetStateDef>{});
             }
-        }
-        else {
-            auto do_execute_transition = [](auto& active_sub_state){ active_sub_state.template executeTransition<_LCA, _TargetStateDef>(); };
-            std::visit(do_execute_transition, active_sub_state_);       
         }
     }
 
@@ -226,13 +213,6 @@ public:
     {}
 
     template <typename _TargetStateDef>
-    void executeTransition() {
-        //using LCA = lca_t<_StateDef, _TargetStateDef>;
-        //using Initial = initial_recursive_t<_TargetStateDef>;
-        //top_state_mixin_.template executeTransition<LCA, Initial>();             
-    }
-
-    template <typename _LCA, typename _TargetStateDef>
     void executeTransition() { }
 };
 
@@ -271,7 +251,11 @@ public:
 
     template <typename _Event>
     bool dispatch(const _Event& event) {
-        return top_state_.handleEvent(event)->reacted;
+        auto reaction_result = top_state_.handleEvent(event);
+        if(reaction_result->reacted) {
+            reaction_result->execute(top_state_);
+        }
+        return true;
     }
 
 private:

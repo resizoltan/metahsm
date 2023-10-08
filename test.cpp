@@ -9,8 +9,8 @@ class Event1 {};
 struct MyTopState : public TopState<MyTopState> {
 
     auto react(Event1 event) {
-        std::cout << "state0" << std::endl;
-        return transition<Fork<Region0::State2, Region1::State3>>();
+        std::cout << "mytopstate" << std::endl;
+        return transition<Region0::State2>();
     }
     struct Region0 : public State<Region0> {
         int i;
@@ -20,7 +20,7 @@ struct MyTopState : public TopState<MyTopState> {
             auto react(Event1 event) {
                 context<State1>();
                 i = 1;
-                if(i==1) return condition_not_met();
+                //if(i==1) return condition_not_met();
                 std::cout << "state1" << std::endl;
                 return transition<State2>();
             }
@@ -30,7 +30,7 @@ struct MyTopState : public TopState<MyTopState> {
             auto react(Event1 event) {
                 //context<State1>().i = 0;
                 std::cout << "state2" << std::endl;
-                return transition<State1>();
+                return transition<Region1>();
             }
         };
         using SubStates = std::tuple<State1, State2>;
@@ -39,7 +39,7 @@ struct MyTopState : public TopState<MyTopState> {
         int i;
 
         auto react(Event1 event) {
-            std::cout << "state0" << std::endl;
+            std::cout << "region1" << std::endl;
             return no_transition();
         }
 
