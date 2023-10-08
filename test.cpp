@@ -61,8 +61,8 @@ template <typename T1, typename T2>
 struct assert_same {
     static_assert(std::is_same_v<T1, T2>);
 };
-static_assert(is_top_state_v<typename decltype(MyTopState::Region0::super_state_spec())::type>, true);
-assert_same<top_state_t<MyTopState::Region0>, MyTopState> ass;
+static_assert(is_top_state_v<typename decltype(MyTopState::Region0::top_state_spec())::type>);
+assert_same<super_state_t<MyTopState::Region0>, MyTopState> ass;
 TopStateMixin<MyTopState> ts{state_machine};
 int main(int argc, char *argv[]) {
     std::cout << "hi" << std::endl;

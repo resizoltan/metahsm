@@ -52,16 +52,15 @@ const TypeErasedTransition<_TopStateDef> no_reaction_{ false };
 //                                     STATE TEMPLATE - USER API                                       //
 //=====================================================================================================//
 
-template <typename _StateDef, typename _SuperStateDef>
+template <typename _StateDef, typename _TopStateDef>
 class StateCrtp : public StateBase
 {
 public:
     using StateDef = _StateDef;
-    using SuperStateDef = _SuperStateDef;
-    using TopStateDef = top_state_t<StateDef>;
+    using TopStateDef = _TopStateDef;
 
     template <typename _SubStateDef>
-    using State = StateCrtp<_SubStateDef, _StateDef>;
+    using State = StateCrtp<_SubStateDef, TopStateDef>;
 
     template <typename _ContextDef>
     decltype(auto) context()  {
@@ -88,9 +87,9 @@ public:
         return static_cast<mixin_t<_StateDef>&>(*this);
     }
 
-    static decltype(auto) super_state_spec()
+    static decltype(auto) top_state_spec()
     {
-        return state_spec<SuperStateDef>{};
+        return state_spec<TopStateDef>{};
     }
 };
 
@@ -113,9 +112,9 @@ template <typename _StateDef>
 class StateMixin : public _StateDef
 {
 public:
-    using SuperStateDef = typename decltype(_StateDef::super_state_spec())::type;
+    using TopStateDef = typename decltype(_StateDef::top_state_spec())::type;
+    using SuperStateDef = super_state_t<_StateDef>;
     using SuperStateMixin = mixin_t<SuperStateDef>;
-    using TopStateDef = top_state_t<_StateDef>;
 
     StateMixin(SuperStateMixin& super_state_mixin)
     : super_state_mixin_{super_state_mixin}
@@ -149,7 +148,8 @@ class CompositeStateMixin : public StateMixin<_StateDef>
 {
 public:
     using SubStates = typename _StateDef::SubStates;
-    using StateMixin<_StateDef>::TopStateDef;
+    using typename StateMixin<_StateDef>::TopStateDef;
+    using typename StateMixin<_StateDef>::SuperStateMixin;
 
     template <typename _TargetStateSpec, typename _DirectSubStateToEnter>
     CompositeStateMixin(SuperStateMixin& super_state_mixin, _TargetStateSpec target_spec, state_spec<_DirectSubStateToEnter> enter_spec,
@@ -181,7 +181,7 @@ public:
     const TypeErasedTransition<TopStateDef>* handleEvent(const _Event& e) {
         auto do_handle_event = [&](auto& active_sub_state){ return active_sub_state.handleEvent(e); };
         auto substate_reaction_result = std::visit(do_handle_event, active_sub_state_);
-        return substate_reaction_result->reacted ? substate_reaction_result : StateMixin<_StateDef>::handleEvent<_Event>(e);
+        return substate_reaction_result->reacted ? substate_reaction_result : StateMixin<_StateDef>::template handleEvent<_Event>(e);
     }
 
     template <typename _TargetStateDef>
@@ -195,12 +195,12 @@ public:
         if constexpr (std::is_same_v<_LCA, _StateDef>) {
             using Initial = direct_substate_to_enter_t<_StateDef, _TargetStateDef>;
             if constexpr(is_simple_state_v<Initial>) {
-                active_sub_state_.emplace<mixin_t<Initial>>(
-                    mixin());
+                active_sub_state_.template emplace<mixin_t<Initial>>(
+                    this->mixin());
             }
             else {
-                active_sub_state_.emplace<mixin_t<Initial>>(
-                    mixin(),
+                active_sub_state_.template emplace<mixin_t<Initial>>(
+                    this->mixin(),
                     state_spec_t<_TargetStateDef>{});
             }
         }
@@ -219,8 +219,10 @@ template <typename _StateDef>
 class SimpleStateMixin : public StateMixin<_StateDef>
 {
 public:
+    using typename StateMixin<_StateDef>::SuperStateMixin;
+
     SimpleStateMixin(SuperStateMixin& super_state_mixin)
-    : StateMixin(super_state_mixin)
+    : StateMixin<_StateDef>(super_state_mixin)
     {}
 
     template <typename _TargetStateDef>

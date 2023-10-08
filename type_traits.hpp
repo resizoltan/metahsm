@@ -126,20 +126,37 @@ struct is_any_in_context_recursive<std::tuple<_StateDef...>, _ContextDef>
 template <typename _StateDef, typename _ContextDef>
 constexpr bool is_any_in_context_recursive_v = is_any_in_context_recursive<_StateDef, _ContextDef>::value;
 
-
-template <typename _StateDef, typename _SFINAE = void>
-struct top_state {
-    using type = _StateDef;
-};
-
-template <typename _StateDef>
-using top_state_t = typename top_state<_StateDef>::type;
-
-template <typename _StateDef>
-struct top_state<_StateDef, std::enable_if_t<!is_top_state_v<typename decltype(_StateDef::super_state_spec())::type>>>
+template <typename _StateDef, typename _StateDefToCompare, typename _PotentialSuperState, typename Enable = void>
+struct super_state
 {
-    using type = top_state_t<typename _StateDef::SuperStateDef>;
+    using type = void;
 };
+
+template <typename _StateDef, typename ... _SubStateOfPotentialSuperstate, typename _PotentialSuperState>
+struct super_state<_StateDef, std::tuple<_SubStateOfPotentialSuperstate...>, _PotentialSuperState, void>
+{
+    using type = typename first_non_void<typename super_state<_StateDef, _SubStateOfPotentialSuperstate, _PotentialSuperState>::type...>::type;
+};
+
+template <typename _StateDef, typename _SubStateOfPotentialSuperstate, typename _PotentialSuperState>
+struct super_state<_StateDef, _SubStateOfPotentialSuperstate, _PotentialSuperState, std::enable_if_t<
+        !std::is_void_v<typename _SubStateOfPotentialSuperstate::SubStates> &&
+        !std::is_same_v<_StateDef, _SubStateOfPotentialSuperstate> &&
+        is_in_context_recursive_v<_StateDef, _SubStateOfPotentialSuperstate>
+    >>
+{
+    using SubType = typename super_state<_StateDef, typename _SubStateOfPotentialSuperstate::SubStates, _SubStateOfPotentialSuperstate>::type;
+    using type = typename first_non_void<SubType, _SubStateOfPotentialSuperstate>::type;
+};
+
+template <typename _StateDef, typename _PotentialSuperState>
+struct super_state<_StateDef, _StateDef, _PotentialSuperState, void>
+{
+    using type = _PotentialSuperState;
+};
+
+template <typename _StateDef>
+using super_state_t  = typename super_state<_StateDef, typename _StateDef::TopStateDef, typename _StateDef::TopStateDef>::type;
 
 template <typename _StateDef1, typename _StateDef2, typename _ContextDef, typename _Enable = void>
 struct lca
