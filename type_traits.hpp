@@ -127,22 +127,18 @@ template <typename _StateDef, typename _ContextDef>
 constexpr bool is_any_in_context_recursive_v = is_any_in_context_recursive<_StateDef, _ContextDef>::value;
 
 
-template <typename _StateDef, typename _SuperStateDef>
-struct top_state;
-
-template <typename _StateDef>
-using top_state_t = typename top_state<_StateDef, typename _StateDef::SuperStateDef>::type;
-
-template <typename _StateDef, typename _SuperStateDef>
-struct top_state
-{
-    using type = top_state_t<_SuperStateDef>;
+template <typename _StateDef, typename _SFINAE = void>
+struct top_state {
+    using type = _StateDef;
 };
 
 template <typename _StateDef>
-struct top_state<_StateDef, _StateDef>
+using top_state_t = typename top_state<_StateDef>::type;
+
+template <typename _StateDef>
+struct top_state<_StateDef, std::enable_if_t<!is_top_state_v<typename decltype(_StateDef::super_state_spec())::type>>>
 {
-    using type = _StateDef;
+    using type = top_state_t<typename _StateDef::SuperStateDef>;
 };
 
 template <typename _StateDef1, typename _StateDef2, typename _ContextDef, typename _Enable = void>
@@ -177,38 +173,6 @@ struct lca<_StateDef1, _StateDef2, _ContextDef, std::enable_if_t<
 
 template <typename _StateDef1, typename _StateDef2>
 using lca_t = typename lca<_StateDef1, _StateDef2, typename _StateDef1::TopStateDef>::type;
-
-template <typename _StateDef, typename _StateDefToCompare, typename _ContextDef, typename Enable = void>
-struct context
-{
-    using type = void;
-};
-
-template <typename _StateDef, typename ... _StateDefToCompare, typename _ContextDef>
-struct context<_StateDef, std::tuple<_StateDefToCompare...>, _ContextDef, void>
-{
-    using type = typename first_non_void<typename context<_StateDef, _StateDefToCompare, _ContextDef>::type...>::type;
-};
-
-template <typename _StateDef, typename _StateDefToCompare, typename _ContextDef>
-struct context<_StateDef, _StateDefToCompare, _ContextDef, std::enable_if_t<
-        !std::is_void_v<typename _StateDefToCompare::SubStates> &&
-        !std::is_same_v<_StateDef, _StateDefToCompare> &&
-        is_in_context_recursive_v<_StateDef, _StateDefToCompare>
-    >>
-{
-    using SubType = typename context<_StateDef, typename _StateDefToCompare::SubStates, _StateDefToCompare>::type;
-    using type = typename first_non_void<SubType, _StateDefToCompare>::type;
-};
-
-template <typename _StateDef, typename _ContextDef>
-struct context<_StateDef, _StateDef, _ContextDef, void>
-{
-    using type = _ContextDef;
-};
-
-template <typename _StateDef>
-using context_t  = typename context<_StateDef, top_state_t<_StateDef>, top_state_t<_StateDef>>::type;
 
 template <typename _StateDef, typename SFINAE = void>
 struct initial_state 

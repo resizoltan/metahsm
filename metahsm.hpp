@@ -13,58 +13,40 @@ namespace metahsm {
 //                                     TYPE ERASED TRANSITION                                          //
 //=====================================================================================================//
 
-template<typename _SourceStateDef>
-class TypeErasedTransition
-{
-public:
-    virtual bool execute(mixin_t<_SourceStateDef>& source) const = 0;
+template<typename _TopStateDef>
+struct TypeErasedTransition
+{   
+    TypeErasedTransition(bool reacted)
+    : reacted{reacted}
+    {}
+    bool reacted;
+    virtual void execute(mixin_t<_TopStateDef>& source) const {};
 };
 
-template <typename _SourceStateDef, typename _TargetStateDef>
-class RegularTransition : public TypeErasedTransition<_SourceStateDef>
+template <typename _TopStateDef, typename _TargetStateDef>
+struct RegularTransition : public TypeErasedTransition<_TopStateDef>
 {
-public:
-    bool execute(mixin_t<_SourceStateDef>& source) const override {
+    using TypeErasedTransition<_TopStateDef>::TypeErasedTransition;
+    void execute(mixin_t<_TopStateDef>& source) const override {
         source.template executeTransition<_TargetStateDef>();
-        return true;
     }
 };
 
-template <typename _SourceStateDef>
-class NoTransition : public TypeErasedTransition<_SourceStateDef>
+template <typename _TopStateDef>
+struct NoTransition : public TypeErasedTransition<_TopStateDef>
 {
-public:
-    bool execute(mixin_t<_SourceStateDef>&) const override {
-        return true;
-    }
+    using TypeErasedTransition<_TopStateDef>::TypeErasedTransition;
+    void execute(mixin_t<_TopStateDef>&) const override { }
 };
 
-template <typename _SourceStateDef>
-class ConditionNotMet : public TypeErasedTransition<_SourceStateDef>
-{
-public:
-    bool execute(mixin_t<_SourceStateDef>&) const override {
-        return false;
-    }
-};
+template <typename _TopStateDef, typename _TargetStateDef>
+const RegularTransition<_TopStateDef, _TargetStateDef> regular_transition_{ true };
 
-template <typename _SourceStateDef>
-class NoReactionDefined : public TypeErasedTransition<_SourceStateDef>
-{
-public:
-    bool execute(mixin_t<_SourceStateDef>&) const override {
-        return false;
-    }
-};
+template <typename _TopStateDef>
+const NoTransition<_TopStateDef> no_transition_{ true };
 
-template <typename _SourceStateDef, typename _TargetStateDef>
-const RegularTransition<_SourceStateDef, _TargetStateDef> regular_transition_;
-
-template <typename _SourceStateDef>
-const NoTransition<_SourceStateDef> no_transition_;
-
-template <typename _SourceStateDef>
-const ConditionNotMet<_SourceStateDef> condition_not_met_;
+template <typename _TopStateDef>
+const TypeErasedTransition<_TopStateDef> no_reaction_{ false };
 
 //=====================================================================================================//
 //                                     STATE TEMPLATE - USER API                                       //
@@ -76,6 +58,7 @@ class StateCrtp : public StateBase
 public:
     using StateDef = _StateDef;
     using SuperStateDef = _SuperStateDef;
+    using TopStateDef = top_state_t<StateDef>;
 
     template <typename _SubStateDef>
     using State = StateCrtp<_SubStateDef, _StateDef>;
@@ -87,20 +70,20 @@ public:
     }
 
     template <typename ... _TargetStateDef>
-    const TypeErasedTransition<_StateDef>* transition() {
+    const TypeErasedTransition<TopStateDef>* transition() {
         //(static_assert(is_in_context_recursive_v<_TargetStateDef, TopStateDef>),...);
-        return &regular_transition_<_StateDef, std::tuple<_TargetStateDef...>>;
+        return &regular_transition_<TopStateDef, std::tuple<_TargetStateDef...>>;
     }
 
-    const TypeErasedTransition<_StateDef>* no_transition() {
-        return &no_transition_<_StateDef>;
+    const TypeErasedTransition<TopStateDef>* no_transition() {
+        return &no_reaction_<TopStateDef>;
     }
 
-    const TypeErasedTransition<_StateDef>* condition_not_met() {
-        return &condition_not_met_<_StateDef>;
+    const TypeErasedTransition<TopStateDef>* condition_not_met() {
+        return &no_reaction_<TopStateDef>;
     }
 
-protected:
+public:
     decltype(auto) mixin() {
         return static_cast<mixin_t<_StateDef>&>(*this);
     }
@@ -132,18 +115,18 @@ class StateMixin : public _StateDef
 public:
     using SuperStateDef = typename decltype(_StateDef::super_state_spec())::type;
     using SuperStateMixin = mixin_t<SuperStateDef>;
+    using TopStateDef = top_state_t<_StateDef>;
 
     StateMixin(SuperStateMixin& super_state_mixin)
     : super_state_mixin_{super_state_mixin}
     {}
 
     template <typename _Event>
-    bool handleEvent(const _Event& e) {
+    const TypeErasedTransition<TopStateDef>* handleEvent(const _Event& e) {
         if constexpr(has_reaction_to_event_v<_StateDef, _Event>) {
-            auto type_erased_transition = this->react(e);
-            return type_erased_transition->execute(mixin());
+            return this->react(e);
         }
-        return false;
+        return &no_reaction_<TopStateDef>;
     }
 
     template <typename _ContextDef>
@@ -166,6 +149,7 @@ class CompositeStateMixin : public StateMixin<_StateDef>
 {
 public:
     using SubStates = typename _StateDef::SubStates;
+    using StateMixin<_StateDef>::TopStateDef;
 
     template <typename _TargetStateSpec, typename _DirectSubStateToEnter>
     CompositeStateMixin(SuperStateMixin& super_state_mixin, _TargetStateSpec target_spec, state_spec<_DirectSubStateToEnter> enter_spec,
@@ -194,10 +178,10 @@ public:
     {}
 
     template <typename _Event>
-    bool handleEvent(const _Event& e) {
+    const TypeErasedTransition<TopStateDef>* handleEvent(const _Event& e) {
         auto do_handle_event = [&](auto& active_sub_state){ return active_sub_state.handleEvent(e); };
-        bool substate_handled_the_event = std::visit(do_handle_event, active_sub_state_);
-        return substate_handled_the_event || StateMixin<_StateDef>::handleEvent<_Event>(e);
+        auto substate_reaction_result = std::visit(do_handle_event, active_sub_state_);
+        return substate_reaction_result->reacted ? substate_reaction_result : StateMixin<_StateDef>::handleEvent<_Event>(e);
     }
 
     template <typename _TargetStateDef>
@@ -285,7 +269,7 @@ public:
 
     template <typename _Event>
     bool dispatch(const _Event& event) {
-        return top_state_.handleEvent(event);
+        return top_state_.handleEvent(event)->reacted;
     }
 
 private:
