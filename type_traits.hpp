@@ -207,39 +207,6 @@ struct super_state<_StateDef, _StateDef, _PotentialSuperState, void>
 template <typename _StateDef>
 using super_state_t  = typename super_state<_StateDef, typename _StateDef::TopStateDef, typename _StateDef::TopStateDef>::type;
 
-template <typename _StateDef1, typename _StateDef2, typename _ContextDef, typename _Enable = void>
-struct lca
-{
-    using type = void;
-};
-
-template <typename _StateDef, typename _ContextDef>
-struct lca<_StateDef, _StateDef, _ContextDef, void>
-{
-    using type = _StateDef;
-};
-
-template <typename _StateDef1, typename _StateDef2, typename ... _ContextDef>
-struct lca<_StateDef1, _StateDef2, std::tuple<_ContextDef...>, void>
-{
-    using type = typename first_non_void<typename lca<_StateDef1, _StateDef2, _ContextDef>::type...>::type;
-};
-
-template <typename _StateDef1, typename _StateDef2, typename _ContextDef>
-struct lca<_StateDef1, _StateDef2, _ContextDef, std::enable_if_t<
-        !std::is_void_v<typename _ContextDef::SubStates> &&
-        !std::is_same_v<_StateDef1, _StateDef2> &&
-        is_in_context_recursive_v<_StateDef1, _ContextDef> &&
-        is_in_context_recursive_v<_StateDef2, _ContextDef>
-    >>
-{
-    using SubType = typename lca<_StateDef1, _StateDef2, typename _ContextDef::SubStates>::type;
-    using type = typename first_non_void<SubType, _ContextDef>::type;
-};
-
-template <typename _StateDef1, typename _StateDef2>
-using lca_t = typename lca<_StateDef1, _StateDef2, typename _StateDef1::TopStateDef>::type;
-
 template <typename _StateDef, typename SFINAE = void>
 struct initial_state 
 {
@@ -315,7 +282,7 @@ struct mixin<_StateDef, std::enable_if_t<is_composite_state_v<_StateDef> && !is_
 template <typename _StateDef>
 struct mixin<_StateDef, std::enable_if_t<is_orthogonal_state_v<_StateDef> && !is_top_state_v<_StateDef>>>
 {
-    using type = CompositeStateMixin<_StateDef>;
+    using type = OrthogonalStateMixin<_StateDef>;
 };
 
 template <typename _StateDef>
