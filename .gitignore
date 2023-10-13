@@ -40,3 +40,4 @@ build/*
 *.obj
 *.pdb
 *.ilk
+*.sln
