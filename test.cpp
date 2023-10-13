@@ -10,7 +10,8 @@ struct MyTopState : public TopState<MyTopState> {
 
     auto react(Event1 event) {
         std::cout << "mytopstate" << std::endl;
-        return transition<Region0::State2>();
+        transition<Region0::State2>();
+        return true;
     }
 
     void on_entry() {
@@ -47,7 +48,8 @@ struct MyTopState : public TopState<MyTopState> {
                 i = 1;
                 //if(i==1) return condition_not_met();
                 std::cout << "state1" << std::endl;
-                return transition<State2>();
+                transition<State2>();
+                return true;
             }
         };
 
@@ -63,7 +65,8 @@ struct MyTopState : public TopState<MyTopState> {
             auto react(Event1 event) {
                 //context<State1>().i = 0;
                 std::cout << "state2" << std::endl;
-                return transition<Region1>();
+                transition<Region1>();
+                return true;
             }
         };
         using SubStates = std::tuple<State1, State2>;
@@ -81,7 +84,7 @@ struct MyTopState : public TopState<MyTopState> {
         }
         auto react(Event1 event) {
             std::cout << "region1" << std::endl;
-            return no_transition();
+            return true;
         }
 
         struct State3 : public State<State3> {
@@ -96,9 +99,9 @@ struct MyTopState : public TopState<MyTopState> {
             }
             auto react(Event1 event) {
                 i = 1;
-                if(i==1) return condition_not_met();
+                if(i==1) return false;
                 std::cout << "state3" << std::endl;
-                return no_transition();
+                return true;
             }
         };
         using SubStates = std::tuple<State3>;

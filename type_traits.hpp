@@ -47,10 +47,10 @@ template <typename _Entity, typename _SFINAE = void>
 struct is_orthogonal_state : std::false_type {};
 
 template <typename _Entity>
-struct is_orthogonal_state<_Entity, std::void_t<std::tuple<typename _Entity::SubStates>>> : std::true_type {};
+struct is_orthogonal_state<_Entity, std::void_t<std::tuple<typename _Entity::SubStates>>> : std::false_type {};
 
 template <typename _Entity>
-struct is_orthogonal_state<_Entity, std::void_t<std::tuple<typename _Entity::Regions>>> : std::false_type {};
+struct is_orthogonal_state<_Entity, std::void_t<std::tuple<typename _Entity::Regions>>> : std::true_type {};
 
 template <typename _Entity>
 constexpr bool is_orthogonal_state_v = is_orthogonal_state<_Entity>::value;
@@ -68,6 +68,12 @@ template <typename _StateDef>
 struct state_spec
 {
     using type = _StateDef;
+};
+
+template <typename ... _StateDef>
+struct state_spec<std::tuple<_StateDef...>> : public std::tuple<state_spec<_StateDef>...>
+{
+    using type = std::tuple<_StateDef...>;
 };
 
 template <typename _StateDef>
@@ -136,6 +142,14 @@ struct is_in_context_recursive<_StateDef, _ContextDef, std::enable_if_t<
 {};
 
 template <typename _StateDef, typename _ContextDef>
+struct is_in_context_recursive<_StateDef, _ContextDef, std::enable_if_t<
+        !std::is_same_v<_StateDef, _ContextDef> &&
+        !std::is_void_v<typename _ContextDef::Regions>
+    >>
+: is_in_context_recursive<_StateDef, typename _ContextDef::Regions>
+{};
+
+template <typename _StateDef, typename _ContextDef>
 constexpr bool is_in_context_recursive_v = is_in_context_recursive<_StateDef, _ContextDef>::value;
 
 template <typename _StateDef, typename _ContextDef>
@@ -170,6 +184,17 @@ struct super_state<_StateDef, _SubStateOfPotentialSuperstate, _PotentialSuperSta
     >>
 {
     using SubType = typename super_state<_StateDef, typename _SubStateOfPotentialSuperstate::SubStates, _SubStateOfPotentialSuperstate>::type;
+    using type = typename first_non_void<SubType, _SubStateOfPotentialSuperstate>::type;
+};
+
+template <typename _StateDef, typename _SubStateOfPotentialSuperstate, typename _PotentialSuperState>
+struct super_state<_StateDef, _SubStateOfPotentialSuperstate, _PotentialSuperState, std::enable_if_t<
+        !std::is_void_v<typename _SubStateOfPotentialSuperstate::Regions> &&
+        !std::is_same_v<_StateDef, _SubStateOfPotentialSuperstate> &&
+        is_in_context_recursive_v<_StateDef, _SubStateOfPotentialSuperstate>
+    >>
+{
+    using SubType = typename super_state<_StateDef, typename _SubStateOfPotentialSuperstate::Regions, _SubStateOfPotentialSuperstate>::type;
     using type = typename first_non_void<SubType, _SubStateOfPotentialSuperstate>::type;
 };
 
@@ -228,6 +253,18 @@ struct initial_state<_StateDef, std::void_t<typename _StateDef::Initial>>
 };
 
 template <typename _StateDef>
+struct initial_state<_StateDef, std::void_t<typename _StateDef::Regions>>
+{
+    using type = typename initial_state<typename _StateDef::Regions>::type;
+};
+
+template <typename ... _RegionDef>
+struct initial_state<std::tuple<_RegionDef...>, void>
+{
+    using type = std::tuple<typename initial_state<_RegionDef>::type...>;
+};
+
+template <typename _StateDef>
 using initial_state_t = typename initial_state<_StateDef>::type;
 
 template <typename _StateDef, typename _SubStateDefTuple, typename _TargetStateDef>
@@ -258,7 +295,10 @@ template <typename _StateDef>
 struct CompositeStateMixin;
 
 template <typename _StateDef>
-struct TopStateMixin;
+struct CompositeTopStateMixin;
+
+template <typename _StateDef>
+struct OrthogonalTopStateMixin;
 
 template <typename _StateDef>
 struct mixin<_StateDef, std::enable_if_t<is_simple_state_v<_StateDef>>>
@@ -273,9 +313,21 @@ struct mixin<_StateDef, std::enable_if_t<is_composite_state_v<_StateDef> && !is_
 };
 
 template <typename _StateDef>
-struct mixin<_StateDef, std::enable_if_t<is_top_state_v<_StateDef>>>
+struct mixin<_StateDef, std::enable_if_t<is_orthogonal_state_v<_StateDef> && !is_top_state_v<_StateDef>>>
 {
-    using type = TopStateMixin<_StateDef>;
+    using type = CompositeStateMixin<_StateDef>;
+};
+
+template <typename _StateDef>
+struct mixin<_StateDef, std::enable_if_t<is_composite_state_v<_StateDef> && is_top_state_v<_StateDef>>>
+{
+    using type = CompositeTopStateMixin<_StateDef>;
+};
+
+template <typename _StateDef>
+struct mixin<_StateDef, std::enable_if_t<is_orthogonal_state_v<_StateDef> && is_top_state_v<_StateDef>>>
+{
+    using type = OrthogonalTopStateMixin<_StateDef>;
 };
 
 template <typename ... _T>
