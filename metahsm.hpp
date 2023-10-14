@@ -16,74 +16,38 @@ namespace metahsm {
 template <typename _TopStateDef>
 using TransitionTrampoline = void(*)(mixin_t<_TopStateDef>&);
 
-template <typename _TopStateDef, typename _StateDef>
+template <typename _TopStateDef, typename ... _StateDef>
 void transition_trampoline(mixin_t<_TopStateDef>& top_state_mixin) {
-    top_state_mixin.template executeTransition<_StateDef>();
+    top_state_mixin.template executeTransition<_StateDef...>();
 }
 
-template <typename _TopStateDef, typename ... _StateDef>
-struct TransitionMerger;
+template <typename _TopStateDef, std::size_t _CombinationId, std::size_t _StateId, typename ... _TargetStateDef>
+constexpr auto get_transition_trampoline() {
+    if constexpr(_StateId == -1) {
+        return &transition_trampoline<_TopStateDef, _TargetStateDef...>;
+    }
+    else if constexpr((1 << _StateId) & _CombinationId) {
+        using AdditionalTargetStateDef = std::tuple_element_t<_StateId, all_states_t<_TopStateDef>>;
+        return get_transition_trampoline<_TopStateDef, _CombinationId, _StateId - 1, _TargetStateDef..., AdditionalTargetStateDef>();
+    }
+    else {
+        return get_transition_trampoline<_TopStateDef, _CombinationId, _StateId - 1, _TargetStateDef...>();
+    }
+}
+
+template <typename _TopStateDef, std::size_t _CombinationId>
+constexpr auto get_transition_trampoline() {
+    return get_transition_trampoline<_TopStateDef, _CombinationId, state_count_v<_TopStateDef> - 1>();
+}
+
+template <typename _TopStateDef, std::size_t ... _CombinationId>
+constexpr auto assemble_transition_trampoline_lookup_table(std::index_sequence<_CombinationId...>) {
+    return std::array{get_transition_trampoline<_TopStateDef, _CombinationId>()...};
+}
 
 template <typename _TopStateDef>
-struct Inner
-{
-    virtual TransitionMerger<_TopStateDef> merge();
-};
-
-template <typename _TopStateDef, typename _StateDef>
-struct TransitionMergerBase {
-    TransitionMergerBase(Inner<_TopStateDef>& inner)
-    : inner_{inner}
-    {}
-    Inner<_TopStateDef>& get_inner(state_spec<_StateDef>) { return inner_; }
-
-    Inner<_TopStateDef>& inner_;
-};
-
-template <typename _TopStateDef, typename ... _StateDef>
-struct TransitionMerger : TransitionMergerBase<_TopStateDef, _StateDef>...
-{
-    template <typename ... I>
-    TransitionMerger(I... inner) 
-    : TransitionMergerBase<_TopStateDef, _StateDef>(inner)...
-    { }
-
-    virtual TransitionMerger<_TopStateDef> merge(TransitionMerger<_TopStateDef> other) {
-        return other;
-    }
-
-    template <typename _OtherStateDef>
-    TransitionMerger<_TopStateDef> merge() { return this->get_inner(state_spec<_OtherStateDef>{}).merge(); }
-};
-
-template <typename _TopStateDef, typename _TargetStateDef, typename ... _StateDef>
-struct RegularTransitionMerger;
-
-template <typename _TopStateDef, typename _TargetStateDef, typename _OtherStateDef, typename ... _StateDef>
-struct RegularInner : Inner<_TopStateDef>
-{
-    TransitionMerger<_TopStateDef> merge() override {
-        return RegularTransitionMerger<_TopStateDef, std::tuple<_TargetStateDef, _OtherStateDef>, _StateDef...>{};
-    }
-};
-
-template <typename _TopStateDef, typename _TargetStateDef, typename _OtherStateDef, typename ... _StateDef>
-struct RegularTransitionMergerBase {
-    RegularInner<_TopStateDef, _TargetStateDef, _OtherStateDef, _StateDef...>& get_regular_inner(state_spec<_OtherStateDef>) { return regular_inner_; }
-    RegularInner<_TopStateDef, _TargetStateDef, _OtherStateDef, _StateDef...> regular_inner_;
-};
-
-template <typename _TopStateDef, typename _TargetStateDef, typename ... _StateDef>
-struct RegularTransitionMerger : TransitionMerger<_TopStateDef, _StateDef...>, RegularTransitionMergerBase<_TopStateDef, _TargetStateDef, _StateDef, _StateDef...>...
-{
-    RegularTransitionMerger()
-    : TransitionMerger<_TopStateDef, _StateDef...>(this->get_regular_inner(state_spec<_StateDef>{})...)
-    {}
-
-    TransitionMerger<_TopStateDef> merge(TransitionMerger<_TopStateDef> other) override {
-        return other.template merge<_TargetStateDef>();
-    }
-};
+const std::array<TransitionTrampoline<_TopStateDef>, state_combination_count_v<_TopStateDef>> transition_trampoline_lookup_table = 
+    assemble_transition_trampoline_lookup_table<_TopStateDef>(std::make_index_sequence<state_combination_count_v<_TopStateDef>>{});
 
 //=====================================================================================================//
 //                                     STATE TEMPLATE - USER API                                       //
@@ -108,7 +72,7 @@ public:
     template <typename _TargetStateDef>
     auto transition() {
         //(static_assert(is_in_context_recursive_v<_TargetStateDef, TopStateDef>),...);
-        this->mixin().set_transition(&transition_trampoline<_TopStateDef, _TargetStateDef>);
+        this->mixin().template set_transition<_TargetStateDef>();
     }
 
 public:
@@ -154,12 +118,12 @@ public:
 
     template <typename _Event>
     auto handleEvent(const _Event& e) {
-        this->transition_ = nullptr;
+        this->target_state_id_ = 0;
         if constexpr(has_reaction_to_event_v<_StateDef, _Event>) {
-            return std::make_tuple(this->react(e), this->transition_);
+            return std::make_tuple(this->react(e), this->target_state_id_);
         }
         else {
-            return std::make_tuple(false, nullptr);
+            return std::make_tuple(false, (std::size_t)0);
         }
     }
 
@@ -173,13 +137,14 @@ public:
         }
     }
 
-    void set_transition(TransitionTrampoline<TopStateDef> transition) {
-        transition_ = transition;
+    template <typename _TargetStateDef>
+    void set_transition() {
+        target_state_id_ = state_id_v<_TargetStateDef>;
     }
 
 protected:
     SuperStateMixin& super_state_mixin_;
-    TransitionTrampoline<TopStateDef> transition_;
+    std::size_t target_state_id_;
 };
 
 
@@ -213,21 +178,21 @@ public:
         return substate_reacted ? std::make_tuple(substate_reacted, transition) : StateMixin<_StateDef>::template handleEvent<_Event>(e);
     }
 
-    template <typename _TargetStateDef>
+    template <typename ... _TargetStateDef>
     void executeTransition() {
         auto is_target_in_context = [&](auto& active_sub_state) { 
-            return is_in_context_recursive_v<_TargetStateDef, typename std::remove_reference_t<decltype(active_sub_state)>::StateDef>; 
+            return is_any_in_context_recursive_v<std::tuple<_TargetStateDef...>, typename std::remove_reference_t<decltype(active_sub_state)>::StateDef>; 
         };
 
         if(std::visit(is_target_in_context, active_sub_state_)) {
-            auto do_execute_transition = [](auto& active_sub_state){ active_sub_state.template executeTransition<_TargetStateDef>(); };
+            auto do_execute_transition = [](auto& active_sub_state){ active_sub_state.template executeTransition<_TargetStateDef...>(); };
             std::visit(do_execute_transition, active_sub_state_); 
         }
         else {
-            using Initial = direct_substate_to_enter_t<_StateDef, _TargetStateDef>;
+            using Initial = direct_substate_to_enter_t<_StateDef, _TargetStateDef...>;
             active_sub_state_.template emplace<mixin_t<Initial>>(
                 this->mixin(),
-                state_spec<_TargetStateDef>{});
+                state_spec<std::tuple<_TargetStateDef...>>{});
         }
     }
 
@@ -247,7 +212,7 @@ public:
     : StateMixin<_StateDef>(super_state_mixin)
     {}
 
-    template <typename _TargetStateDef>
+    template <typename ... _TargetStateDef>
     void executeTransition() { }
 };
 
@@ -338,9 +303,10 @@ public:
 
     template <typename _Event>
     bool dispatch(const _Event& event) {
-        auto [any_state_reacted, transition] = top_state_.handleEvent(event);
-        if(any_state_reacted && transition != nullptr) {
-            transition(top_state_);
+        auto& tmp = transition_trampoline_lookup_table<_TopStateDef>;
+        auto [any_state_reacted, target_state_id] = top_state_.handleEvent(event);
+        if(any_state_reacted && target_state_id != 0) {
+            transition_trampoline_lookup_table<_TopStateDef>[(1 << target_state_id)](top_state_);
         }
         return any_state_reacted;
     }

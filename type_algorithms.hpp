@@ -8,6 +8,9 @@ namespace metahsm {
 template <typename ... _Tuple>
 using tuple_join_t = decltype(std::tuple_cat(std::declval<_Tuple>()...));
 
+template <typename T, typename Tuple>
+using tuple_add_t = tuple_join_t<std::tuple<T>, Tuple>;
+
 template <typename _T>
 struct as_tuple {
     using type = std::tuple<_T>;
@@ -54,5 +57,20 @@ struct first_non_void<_T, _Us...>
 template<typename T>
 using first_non_void_t = typename first_non_void<T>::type;
 
+template <typename _T, typename _Tuple>
+struct index;
+
+template <typename _T, typename ... _Us>
+struct index<_T, std::tuple<_T, _Us...>> {
+    static constexpr std::size_t value = 0;
+};
+
+template <typename _T, typename _U, typename ... _Us>
+struct index<_T, std::tuple<_U, _Us...>> {
+    static constexpr std::size_t value = 1 + index<_T, std::tuple<_Us...>>::value;
+};
+
+template <typename _T, typename _Tuple>
+constexpr std::size_t index_v = index<_T, _Tuple>::value;
 
 }

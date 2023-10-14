@@ -234,23 +234,62 @@ struct initial_state<std::tuple<_RegionDef...>, void>
 template <typename _StateDef>
 using initial_state_t = typename initial_state<_StateDef>::type;
 
-template <typename _StateDef, typename _SubStateDefTuple, typename _TargetStateDef>
+template <typename _StateDef, typename _SubStateDefTuple, typename ... _TargetStateDef>
 struct direct_substate_to_enter;
 
-template <typename _StateDef, typename ... _SubStateDef, typename _TargetStateDef>
-struct direct_substate_to_enter<_StateDef, std::tuple<_SubStateDef...>, _TargetStateDef>
+template <typename _StateDef, typename ... _SubStateDef, typename ... _TargetStateDef>
+struct direct_substate_to_enter<_StateDef, std::tuple<_SubStateDef...>, _TargetStateDef...>
 {
     using type = typename first_non_void<
         std::conditional_t<
-            is_any_in_context_recursive_v<_TargetStateDef, _SubStateDef>,
+            is_any_in_context_recursive_v<std::tuple<_TargetStateDef...>, _SubStateDef>,
             _SubStateDef,
             void
         >...,
         initial_state_t<_StateDef>>::type;
 };
 
-template <typename _StateDef, typename _TargetStateDef>
-using direct_substate_to_enter_t = typename direct_substate_to_enter<_StateDef, typename _StateDef::SubStates, _TargetStateDef>::type;
+template <typename _StateDef, typename ... _TargetStateDef>
+using direct_substate_to_enter_t = typename direct_substate_to_enter<_StateDef, typename _StateDef::SubStates, _TargetStateDef...>::type;
+
+template <typename _StateDef, typename _Enable = void>
+struct all_states;
+
+template <typename _StateDef>
+struct all_states<_StateDef, std::enable_if_t<is_simple_state_v<_StateDef>>>
+{
+    using type = std::tuple<_StateDef>;
+};
+
+template <typename ... _StateDef>
+struct all_states<std::tuple<_StateDef...>, void>
+{
+    using type = tuple_join_t<typename all_states<_StateDef>::type...>;
+};
+
+template <typename _StateDef>
+struct all_states<_StateDef, std::enable_if_t<is_composite_state_v<_StateDef>>>
+{
+    using type = tuple_add_t<_StateDef, typename all_states<typename _StateDef::SubStates>::type>;
+};
+
+template <typename _StateDef>
+struct all_states<_StateDef, std::enable_if_t<is_orthogonal_state_v<_StateDef>>>
+{
+    using type = tuple_add_t<_StateDef, typename all_states<typename _StateDef::Regions>::type>;
+};
+
+template <typename _StateDef>
+using all_states_t = typename all_states<_StateDef>::type;
+
+template <typename _StateDef>
+constexpr std::size_t state_id_v = index_v<_StateDef, all_states_t<typename _StateDef::TopStateDef>>;
+
+template <typename _StateDef>
+constexpr std::size_t state_count_v = std::tuple_size_v<all_states_t<_StateDef>>;
+
+template <typename _StateDef>
+constexpr std::size_t state_combination_count_v = (1 << state_count_v<_StateDef> + 1);
 
 template <typename _StateDef, typename _Enable = void>
 struct mixin;
@@ -260,6 +299,9 @@ struct SimpleStateMixin;
 
 template <typename _StateDef>
 struct CompositeStateMixin;
+
+template <typename _StateDef>
+struct OrthogonalStateMixin;
 
 template <typename _StateDef>
 struct CompositeTopStateMixin;
