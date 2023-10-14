@@ -225,12 +225,13 @@ template <typename _TopStateDef>
 class TopState : public StateCrtp<_TopStateDef, _TopStateDef> , public TopStateBase
 {};
 
-template <typename _StateDef>
-class CompositeTopStateMixin : public CompositeStateMixin<_StateDef>
+template <typename _StateMixin>
+class TopStateMixin : public _StateMixin
 {
+    using typename _StateMixin::StateDef;
 public:
-    CompositeTopStateMixin(StateMachine<_StateDef>& state_machine)
-    : CompositeStateMixin<_StateDef>(*this, 1 << state_id_v<initial_state_t<_StateDef>>),
+    TopStateMixin(StateMachine<StateDef>& state_machine)
+    : _StateMixin(*this, 1 << state_id_v<initial_state_t<StateDef>>),
       state_machine_{state_machine}
     {}
 
@@ -238,23 +239,7 @@ public:
     _ContextDef& context();
 
 private:
-    StateMachine<_StateDef>& state_machine_;
-};
-
-template <typename _StateDef>
-class OrthogonalTopStateMixin : public OrthogonalStateMixin<_StateDef>
-{
-public:
-    OrthogonalTopStateMixin(StateMachine<_StateDef>& state_machine)
-    : OrthogonalStateMixin<_StateDef>(*this, state_spec<initial_state_t<_StateDef>>{}),
-      state_machine_{state_machine}
-    {}
-
-    template <typename _ContextDef>
-    _ContextDef& context();
-
-private:
-    StateMachine<_StateDef>& state_machine_;
+    StateMachine<StateDef>& state_machine_;
 };
 
 

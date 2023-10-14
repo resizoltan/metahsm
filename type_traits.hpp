@@ -297,11 +297,8 @@ struct CompositeStateMixin;
 template <typename _StateDef>
 struct OrthogonalStateMixin;
 
-template <typename _StateDef>
-struct CompositeTopStateMixin;
-
-template <typename _StateDef>
-struct OrthogonalTopStateMixin;
+template <typename _StateMixin>
+struct TopStateMixin;
 
 template <typename _StateDef>
 struct mixin<_StateDef, std::enable_if_t<is_simple_state_v<_StateDef>>>
@@ -322,15 +319,21 @@ struct mixin<_StateDef, std::enable_if_t<is_orthogonal_state_v<_StateDef> && !is
 };
 
 template <typename _StateDef>
+struct mixin<_StateDef, std::enable_if_t<is_simple_state_v<_StateDef> && is_top_state_v<_StateDef>>>
+{
+    using type = TopStateMixin<SimpleStateMixin<_StateDef>>;
+};
+
+template <typename _StateDef>
 struct mixin<_StateDef, std::enable_if_t<is_composite_state_v<_StateDef> && is_top_state_v<_StateDef>>>
 {
-    using type = CompositeTopStateMixin<_StateDef>;
+    using type = TopStateMixin<CompositeStateMixin<_StateDef>>;
 };
 
 template <typename _StateDef>
 struct mixin<_StateDef, std::enable_if_t<is_orthogonal_state_v<_StateDef> && is_top_state_v<_StateDef>>>
 {
-    using type = OrthogonalTopStateMixin<_StateDef>;
+    using type = TopStateMixin<OrthogonalStateMixin<_StateDef>>;
 };
 
 template <typename ... _T>
