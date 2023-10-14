@@ -73,4 +73,7 @@ struct index<_T, std::tuple<_U, _Us...>> {
 template <typename _T, typename _Tuple>
 constexpr std::size_t index_v = index<_T, _Tuple>::value;
 
+template<class... Ts> struct overload : Ts... { using Ts::operator()...; };
+template<class... Ts> overload(Ts...) -> overload<Ts...>;
+
 }

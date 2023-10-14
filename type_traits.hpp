@@ -152,18 +152,6 @@ struct is_in_context_recursive<_StateDef, _ContextDef, std::enable_if_t<
 template <typename _StateDef, typename _ContextDef>
 constexpr bool is_in_context_recursive_v = is_in_context_recursive<_StateDef, _ContextDef>::value;
 
-template <typename _StateDef, typename _ContextDef>
-struct is_any_in_context_recursive : is_in_context_recursive<_StateDef, _ContextDef> 
-{};
-
-template <typename ... _StateDef, typename _ContextDef>
-struct is_any_in_context_recursive<std::tuple<_StateDef...>, _ContextDef>
-: std::disjunction<is_in_context_recursive<_StateDef, _ContextDef>...>
-{};
-
-template <typename _StateDef, typename _ContextDef>
-constexpr bool is_any_in_context_recursive_v = is_any_in_context_recursive<_StateDef, _ContextDef>::value;
-
 template <typename _StateDef, typename _StateDefToCompare, typename _PotentialSuperState, typename Enable = void>
 struct super_state
 {
@@ -234,24 +222,6 @@ struct initial_state<std::tuple<_RegionDef...>, void>
 template <typename _StateDef>
 using initial_state_t = typename initial_state<_StateDef>::type;
 
-template <typename _StateDef, typename _SubStateDefTuple, typename ... _TargetStateDef>
-struct direct_substate_to_enter;
-
-template <typename _StateDef, typename ... _SubStateDef, typename ... _TargetStateDef>
-struct direct_substate_to_enter<_StateDef, std::tuple<_SubStateDef...>, _TargetStateDef...>
-{
-    using type = typename first_non_void<
-        std::conditional_t<
-            is_any_in_context_recursive_v<std::tuple<_TargetStateDef...>, _SubStateDef>,
-            _SubStateDef,
-            void
-        >...,
-        initial_state_t<_StateDef>>::type;
-};
-
-template <typename _StateDef, typename ... _TargetStateDef>
-using direct_substate_to_enter_t = typename direct_substate_to_enter<_StateDef, typename _StateDef::SubStates, _TargetStateDef...>::type;
-
 template <typename _StateDef, typename _Enable = void>
 struct all_states;
 
@@ -285,11 +255,35 @@ using all_states_t = typename all_states<_StateDef>::type;
 template <typename _StateDef>
 constexpr std::size_t state_id_v = index_v<_StateDef, all_states_t<typename _StateDef::TopStateDef>>;
 
+template <typename _StateDefTuple>
+struct state_combination;
+
+template <typename ... _StateDef>
+struct state_combination<std::tuple<_StateDef...>>
+{
+    static constexpr std::size_t value = ((1 << state_id_v<_StateDef>) | ...);
+    static constexpr std::array<std::size_t, sizeof...(_StateDef)> ids = {state_id_v<_StateDef>...};
+};
+
+template <typename _StateDef>
+constexpr std::size_t state_combination_v = state_combination<all_states_t<_StateDef>>::value;
+
+template <typename _StateDef>
+const auto state_ids_v = state_combination<all_states_t<_StateDef>>::ids;
+
 template <typename _StateDef>
 constexpr std::size_t state_count_v = std::tuple_size_v<all_states_t<_StateDef>>;
 
 template <typename _StateDef>
 constexpr std::size_t state_combination_count_v = (1 << state_count_v<_StateDef> + 1);
+
+template <typename ... _SubStateDef>
+std::size_t direct_substate_to_enter_f(std::size_t target_combination, state_spec<std::tuple<_SubStateDef...>>) {
+    std::size_t substate_local_id = 0;
+    (static_cast<bool>(substate_local_id++, state_combination_v<_SubStateDef> & target_combination) || ...)
+        || (substate_local_id++, true);
+    return substate_local_id - 1;
+}
 
 template <typename _StateDef, typename _Enable = void>
 struct mixin;
