@@ -21,6 +21,70 @@ void transition_trampoline(mixin_t<_TopStateDef>& top_state_mixin) {
     top_state_mixin.template executeTransition<_StateDef>();
 }
 
+template <typename _TopStateDef, typename ... _StateDef>
+struct TransitionMerger;
+
+template <typename _TopStateDef>
+struct Inner
+{
+    virtual TransitionMerger<_TopStateDef> merge();
+};
+
+template <typename _TopStateDef, typename _StateDef>
+struct TransitionMergerBase {
+    TransitionMergerBase(Inner<_TopStateDef>& inner)
+    : inner_{inner}
+    {}
+    Inner<_TopStateDef>& get_inner(state_spec<_StateDef>) { return inner_; }
+
+    Inner<_TopStateDef>& inner_;
+};
+
+template <typename _TopStateDef, typename ... _StateDef>
+struct TransitionMerger : TransitionMergerBase<_TopStateDef, _StateDef>...
+{
+    template <typename ... I>
+    TransitionMerger(I... inner) 
+    : TransitionMergerBase<_TopStateDef, _StateDef>(inner)...
+    { }
+
+    virtual TransitionMerger<_TopStateDef> merge(TransitionMerger<_TopStateDef> other) {
+        return other;
+    }
+
+    template <typename _OtherStateDef>
+    TransitionMerger<_TopStateDef> merge() { return this->get_inner(state_spec<_OtherStateDef>{}).merge(); }
+};
+
+template <typename _TopStateDef, typename _TargetStateDef, typename ... _StateDef>
+struct RegularTransitionMerger;
+
+template <typename _TopStateDef, typename _TargetStateDef, typename _OtherStateDef, typename ... _StateDef>
+struct RegularInner : Inner<_TopStateDef>
+{
+    TransitionMerger<_TopStateDef> merge() override {
+        return RegularTransitionMerger<_TopStateDef, std::tuple<_TargetStateDef, _OtherStateDef>, _StateDef...>{};
+    }
+};
+
+template <typename _TopStateDef, typename _TargetStateDef, typename _OtherStateDef, typename ... _StateDef>
+struct RegularTransitionMergerBase {
+    RegularInner<_TopStateDef, _TargetStateDef, _OtherStateDef, _StateDef...>& get_regular_inner(state_spec<_OtherStateDef>) { return regular_inner_; }
+    RegularInner<_TopStateDef, _TargetStateDef, _OtherStateDef, _StateDef...> regular_inner_;
+};
+
+template <typename _TopStateDef, typename _TargetStateDef, typename ... _StateDef>
+struct RegularTransitionMerger : TransitionMerger<_TopStateDef, _StateDef...>, RegularTransitionMergerBase<_TopStateDef, _TargetStateDef, _StateDef, _StateDef...>...
+{
+    RegularTransitionMerger()
+    : TransitionMerger<_TopStateDef, _StateDef...>(this->get_regular_inner(state_spec<_StateDef>{})...)
+    {}
+
+    TransitionMerger<_TopStateDef> merge(TransitionMerger<_TopStateDef> other) override {
+        return other.template merge<_TargetStateDef>();
+    }
+};
+
 //=====================================================================================================//
 //                                     STATE TEMPLATE - USER API                                       //
 //=====================================================================================================//
@@ -198,20 +262,20 @@ public:
     template <typename _TargetStateSpec>
     OrthogonalStateMixin(SuperStateMixin& super_state_mixin, _TargetStateSpec spec)
     : StateMixin<_StateDef>(super_state_mixin),
-      regions_{init_regions(super_state_mixin, spec)}
+      regions_{init_regions(super_state_mixin, spec, state_spec<Regions>{})}
     {}
 
-    template <template <typename ... _RegionMixin> typename Regions, typename ... _TargetStateSpec, typename ... _RegionMixin>
-    static auto init_regions(SuperStateMixin& super_state_mixin, std::tuple<_TargetStateSpec...> spec) {
-        return std::make_tuple(_RegionMixin{super_state_mixin, spec}...);
+    template <typename ... _TargetStateSpec, typename ... _RegionDef>
+    static auto init_regions(SuperStateMixin& super_state_mixin, std::tuple<_TargetStateSpec...> target_spec, state_spec_t<std::tuple<_RegionDef...>>) {
+        return std::make_tuple(mixin_t<_RegionDef>{super_state_mixin, target_spec}...);
     }
 
-    /*template <typename _Event>
-    const TypeErasedTransition<TopStateDef>* handleEvent(const _Event& e) {
+    template <typename _Event>
+    bool handleEvent(const _Event& e) {
         auto do_handle_event = [&](auto& ... region){ return (region.handleEvent(e) || ...); };
         auto regions_reaction_result = std::apply(do_handle_event, regions_);
         return regions_reaction_result->reacted ? regions_reaction_result : StateMixin<_StateDef>::template handleEvent<_Event>(e);
-    }*/
+    }
 
     template <typename _TargetStateDef>
     void executeTransition() {
