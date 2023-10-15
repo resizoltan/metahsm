@@ -61,9 +61,14 @@ public:
     using TopStateDef = typename decltype(_StateDef::top_state_spec())::type;
     using SuperStateDef = super_state_t<_StateDef>;
     using SuperStateMixin = mixin_t<SuperStateDef>;
+    struct Initializer
+    {
+        SuperStateMixin& super_state_mixin;
+        std::size_t target_combination;
+    };
 
-    StateMixin(SuperStateMixin& super_state_mixin)
-    : super_state_mixin_{super_state_mixin}
+    StateMixin(Initializer initializer)
+    : super_state_mixin_{initializer.super_state_mixin}
     {
         if constexpr (has_entry_action_v<_StateDef>) {
             this->on_entry();
@@ -115,23 +120,19 @@ public:
     using SubStates = typename _StateDef::SubStates;
     using typename StateMixin<_StateDef>::TopStateDef;
     using typename StateMixin<_StateDef>::SuperStateMixin;
+    using typename StateMixin<_StateDef>::Initializer;
 
-    CompositeStateMixin(SuperStateMixin& super_state_mixin, std::size_t target_combination, std::size_t = 0)
-    : StateMixin<_StateDef>(super_state_mixin)
+    CompositeStateMixin(Initializer initializer)
+    : StateMixin<_StateDef>(initializer)
     {
-        std::size_t substate_to_enter_local_id = direct_substate_to_enter_f(target_combination, state_spec<SubStates>{});
-        std::invoke(lookup_table[substate_to_enter_local_id], this, target_combination);
+        std::size_t substate_to_enter_local_id = direct_substate_to_enter_f(initializer.target_combination, state_spec<SubStates>{});
+        std::invoke(lookup_table[substate_to_enter_local_id], this, initializer.target_combination);
     }
-
-    CompositeStateMixin(std::tuple<SuperStateMixin&, std::size_t> initializer)
-    : CompositeStateMixin<_StateDef>(std::get<0>(initializer), std::get<1>(initializer))
-    {}
 
     template <typename _DirectSubStateToEnter>
     void enter_substate(std::size_t target_combination){
-         active_sub_state_.template emplace<mixin_t<_DirectSubStateToEnter>>(
-            this->mixin(),
-            target_combination);
+        using T = mixin_t<_DirectSubStateToEnter>;
+         active_sub_state_.template emplace<T>(typename T::Initializer{this->mixin(), target_combination});
     }
 
     template <typename _Event>
@@ -184,13 +185,10 @@ class SimpleStateMixin : public StateMixin<_StateDef>
 {
 public:
     using typename StateMixin<_StateDef>::SuperStateMixin;
+    using typename StateMixin<_StateDef>::Initializer;
 
-    SimpleStateMixin(SuperStateMixin& super_state_mixin, std::size_t, std::size_t = 0)
-    : StateMixin<_StateDef>(super_state_mixin)
-    {}
-
-    SimpleStateMixin(std::tuple<SuperStateMixin&, std::size_t> initializer)
-    : SimpleStateMixin<_StateDef>(std::get<0>(initializer), std::get<1>(initializer))
+    SimpleStateMixin(Initializer initializer)
+    : StateMixin<_StateDef>(initializer)
     {}
 
     void executeTransition(std::size_t) { }
@@ -203,19 +201,16 @@ public:
     using Regions = typename _StateDef::Regions;
     using typename StateMixin<_StateDef>::TopStateDef;
     using typename StateMixin<_StateDef>::SuperStateMixin;
+    using typename StateMixin<_StateDef>::Initializer;
 
     template <std::size_t ... I>
-    OrthogonalStateMixin(SuperStateMixin& super_state_mixin, std::size_t target_combination, std::index_sequence<I...>)
-    : StateMixin<_StateDef>(super_state_mixin),
-      regions_{((void)I, std::tuple<SuperStateMixin&, std::size_t>{super_state_mixin, target_combination})...} 
+    OrthogonalStateMixin(Initializer initializer, std::index_sequence<I...>)
+    : StateMixin<_StateDef>(initializer),
+      regions_{typename mixin_t<std::tuple_element_t<I, Regions>>::Initializer{this->mixin(), initializer.target_combination}...} 
     {}
 
-    OrthogonalStateMixin(SuperStateMixin& super_state_mixin, std::size_t target_combination)
-    : OrthogonalStateMixin<_StateDef>(super_state_mixin, target_combination, std::make_index_sequence<std::tuple_size_v<Regions>>{})
-    {}
-
-    OrthogonalStateMixin(std::tuple<SuperStateMixin&, std::size_t> initializer)
-    : OrthogonalStateMixin<_StateDef>(std::get<0>(initializer), std::get<1>(initializer))
+    OrthogonalStateMixin(Initializer initializer)
+    : OrthogonalStateMixin<_StateDef>(initializer, std::make_index_sequence<std::tuple_size_v<Regions>>{})
     {}
 
     template <typename _Event>
@@ -242,9 +237,10 @@ template <typename _StateMixin>
 class TopStateMixin : public _StateMixin
 {
     using typename _StateMixin::StateDef;
+    using typename _StateMixin::Initializer;
 public:
     TopStateMixin(StateMachine<StateDef>& state_machine)
-    : _StateMixin(*this, state_combination_v<initial_state_t<StateDef>>),
+    : _StateMixin(Initializer{*this, state_combination_v<initial_state_t<StateDef>>}),
       state_machine_{state_machine}
     {}
 
