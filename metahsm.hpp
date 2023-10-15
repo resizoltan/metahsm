@@ -78,9 +78,9 @@ public:
 
     template <typename _Event>
     auto handleEvent(const _Event& e) {
-        this->target_state_id_ = 0;
+        this->target_combination_ = 0;
         if constexpr(has_reaction_to_event_v<_StateDef, _Event>) {
-            return std::make_tuple(this->react(e), this->target_state_id_);
+            return std::make_tuple(this->react(e), this->target_combination_);
         }
         else {
             return std::make_tuple(false, (std::size_t)0);
@@ -99,12 +99,12 @@ public:
 
     template <typename _TargetStateDef>
     void set_transition() {
-        target_state_id_ = state_id_v<_TargetStateDef>;
+        target_combination_ = 1 << state_id_v<_TargetStateDef>;
     }
 
 protected:
     SuperStateMixin& super_state_mixin_;
-    std::size_t target_state_id_;
+    std::size_t target_combination_;
 };
 
 
@@ -116,12 +116,16 @@ public:
     using typename StateMixin<_StateDef>::TopStateDef;
     using typename StateMixin<_StateDef>::SuperStateMixin;
 
-    CompositeStateMixin(SuperStateMixin& super_state_mixin, std::size_t target_combination)
+    CompositeStateMixin(SuperStateMixin& super_state_mixin, std::size_t target_combination, std::size_t = 0)
     : StateMixin<_StateDef>(super_state_mixin)
     {
         std::size_t substate_to_enter_local_id = direct_substate_to_enter_f(target_combination, state_spec<SubStates>{});
         std::invoke(lookup_table[substate_to_enter_local_id], this, target_combination);
     }
+
+    CompositeStateMixin(std::tuple<SuperStateMixin&, std::size_t> initializer)
+    : CompositeStateMixin<_StateDef>(std::get<0>(initializer), std::get<1>(initializer))
+    {}
 
     template <typename _DirectSubStateToEnter>
     void enter_substate(std::size_t target_combination){
@@ -141,11 +145,14 @@ public:
     }
 
     void executeTransition(std::size_t target_combination) {
+        remove_conflicting(target_combination, state_spec<SubStates>{});
         auto is_target_in_context = overload{
-            [&](auto& active_sub_state) { 
-                return target_combination & state_combination_v<typename std::remove_reference_t<decltype(active_sub_state)>::StateDef>; 
+            [&](auto& active_sub_state) {
+                using ActiveSubStateDef = typename std::remove_reference_t<decltype(active_sub_state)>::StateDef;
+                return static_cast<bool>(target_combination & state_combination_v<ActiveSubStateDef>)
+                    || (!static_cast<bool>(target_combination & state_combination_v<SubStates>) && std::is_same_v<initial_state_t<_StateDef>, ActiveSubStateDef>); 
             },
-            [](std::monostate) { return (std::size_t)0; }
+            [](std::monostate) { return false; }
         };
 
         if(std::visit(is_target_in_context, active_sub_state_)) {
@@ -178,8 +185,12 @@ class SimpleStateMixin : public StateMixin<_StateDef>
 public:
     using typename StateMixin<_StateDef>::SuperStateMixin;
 
-    SimpleStateMixin(SuperStateMixin& super_state_mixin, std::size_t)
+    SimpleStateMixin(SuperStateMixin& super_state_mixin, std::size_t, std::size_t = 0)
     : StateMixin<_StateDef>(super_state_mixin)
+    {}
+
+    SimpleStateMixin(std::tuple<SuperStateMixin&, std::size_t> initializer)
+    : SimpleStateMixin<_StateDef>(std::get<0>(initializer), std::get<1>(initializer))
     {}
 
     void executeTransition(std::size_t) { }
@@ -193,27 +204,29 @@ public:
     using typename StateMixin<_StateDef>::TopStateDef;
     using typename StateMixin<_StateDef>::SuperStateMixin;
 
-    template <typename _TargetStateSpec>
-    OrthogonalStateMixin(SuperStateMixin& super_state_mixin, _TargetStateSpec spec)
+    template <std::size_t ... I>
+    OrthogonalStateMixin(SuperStateMixin& super_state_mixin, std::size_t target_combination, std::index_sequence<I...>)
     : StateMixin<_StateDef>(super_state_mixin),
-      regions_{init_regions(super_state_mixin, spec, state_spec<Regions>{})}
+      regions_{((void)I, std::tuple<SuperStateMixin&, std::size_t>{super_state_mixin, target_combination})...} 
     {}
 
-    template <typename ... _TargetStateSpec, typename ... _RegionDef>
-    static auto init_regions(SuperStateMixin& super_state_mixin, std::tuple<_TargetStateSpec...> target_spec, state_spec_t<std::tuple<_RegionDef...>>) {
-        return std::make_tuple(mixin_t<_RegionDef>{super_state_mixin, target_spec}...);
-    }
+    OrthogonalStateMixin(SuperStateMixin& super_state_mixin, std::size_t target_combination)
+    : OrthogonalStateMixin<_StateDef>(super_state_mixin, target_combination, std::make_index_sequence<std::tuple_size_v<Regions>>{})
+    {}
+
+    OrthogonalStateMixin(std::tuple<SuperStateMixin&, std::size_t> initializer)
+    : OrthogonalStateMixin<_StateDef>(std::get<0>(initializer), std::get<1>(initializer))
+    {}
 
     template <typename _Event>
-    bool handleEvent(const _Event& e) {
-        auto do_handle_event = [&](auto& ... region){ return (region.handleEvent(e) || ...); };
-        auto regions_reaction_result = std::apply(do_handle_event, regions_);
-        return regions_reaction_result->reacted ? regions_reaction_result : StateMixin<_StateDef>::template handleEvent<_Event>(e);
+    auto handleEvent(const _Event& e) {
+        auto do_handle_event = [&](auto& ... region){ return (region.handleEvent(e) + ...); };
+        auto [substate_reacted, transition] = std::apply(do_handle_event, regions_);
+        return substate_reacted ? std::make_tuple(substate_reacted, transition) : StateMixin<_StateDef>::template handleEvent<_Event>(e);
     }
 
-    template <typename _TargetStateDef>
-    void executeTransition() {
-        auto do_execute_transition = [&](auto& ... region){ (region.template executeTransition<_TargetStateDef>(), ...); };
+    void executeTransition(std::size_t target_combination) {
+        auto do_execute_transition = [&](auto& ... region){ (region.executeTransition(target_combination), ...); };
         std::apply(do_execute_transition, regions_);
     }
 
@@ -231,7 +244,7 @@ class TopStateMixin : public _StateMixin
     using typename _StateMixin::StateDef;
 public:
     TopStateMixin(StateMachine<StateDef>& state_machine)
-    : _StateMixin(*this, 1 << state_id_v<initial_state_t<StateDef>>),
+    : _StateMixin(*this, state_combination_v<initial_state_t<StateDef>>),
       state_machine_{state_machine}
     {}
 
@@ -257,9 +270,9 @@ public:
 
     template <typename _Event>
     bool dispatch(const _Event& event) {
-        auto [any_state_reacted, target_state_id] = top_state_.handleEvent(event);
-        if(any_state_reacted && target_state_id != 0) {
-            top_state_.executeTransition(1 << target_state_id);
+        auto [any_state_reacted, target_combination] = top_state_.handleEvent(event);
+        if(any_state_reacted && target_combination != 0) {
+            top_state_.executeTransition(target_combination);
         }
         return any_state_reacted;
     }

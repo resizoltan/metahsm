@@ -345,4 +345,14 @@ struct mixin<std::tuple<_T...>>
 template <typename _StateDef>
 using mixin_t = typename mixin<_StateDef>::type;
 
+auto operator+(std::tuple<bool, std::size_t> lhs, std::tuple<bool, std::size_t> rhs) {
+    return std::make_tuple(std::get<0>(lhs) || std::get<0>(rhs), std::get<1>(lhs) | std::get<1>(rhs));
+}
+
+template <typename ... _StateDef>
+void remove_conflicting(std::size_t& target_combination, state_spec<std::tuple<_StateDef...>>) {
+    bool already_matched = false;
+    ((already_matched ? target_combination &= ~state_combination_v<_StateDef> : (already_matched = target_combination & state_combination_v<_StateDef>)), ...);
+}
+
 }

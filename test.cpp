@@ -65,11 +65,12 @@ struct MyTopState : public TopState<MyTopState> {
             auto react(Event1 event) {
                 //context<State1>().i = 0;
                 std::cout << "state2" << std::endl;
-                transition<Region1>();
+                transition<State1>();
                 return true;
             }
         };
         using SubStates = std::tuple<State1, State2>;
+        using Initial = State2;
     };
     struct Region1 : public State<Region1> {
         int i;
@@ -84,6 +85,7 @@ struct MyTopState : public TopState<MyTopState> {
         }
         auto react(Event1 event) {
             std::cout << "region1" << std::endl;
+            transition<Region0::State2>();
             return true;
         }
 
@@ -106,7 +108,7 @@ struct MyTopState : public TopState<MyTopState> {
         };
         using SubStates = std::tuple<State3>;
     };
-    using SubStates = std::tuple<Region0, Region1>;
+    using Regions = std::tuple<Region0, Region1>;
 };
 StateMachine<MyTopState> state_machine;
 int main(int argc, char *argv[]) {
