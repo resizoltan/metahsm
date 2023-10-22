@@ -5,11 +5,6 @@
 
 namespace metahsm {
 
-template <typename ... _Tuple>
-using tuple_join_t = decltype(std::tuple_cat(std::declval<_Tuple>()...));
-
-template <typename T, typename Tuple>
-using tuple_add_t = tuple_join_t<std::tuple<T>, Tuple>;
 
 template <typename _T>
 struct as_tuple {
@@ -23,6 +18,9 @@ struct as_tuple<std::tuple<_T...>> {
 
 template <typename _T>
 using as_tuple_t = typename as_tuple<_T>::type;
+
+template <typename ... _T>
+using tuple_join_t = decltype(std::tuple_cat(std::declval<as_tuple_t<_T>>()...));
 
 template <typename _T>
 struct to_variant;
@@ -54,8 +52,8 @@ struct first_non_void<_T, _Us...>
     using type = _T;
 };
 
-template<typename T>
-using first_non_void_t = typename first_non_void<T>::type;
+template<typename ... T>
+using first_non_void_t = typename first_non_void<T...>::type;
 
 template <typename _T, typename _Tuple>
 struct index;

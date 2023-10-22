@@ -115,85 +115,97 @@ struct has_exit_action<_StateDef, std::void_t<std::is_invocable<decltype(&_State
 template <typename _StateDef>
 constexpr bool has_exit_action_v = has_exit_action<_StateDef>::value;
 
-template <typename _StateDef, typename _ContextDef, typename Enable = void>
-struct is_in_context_recursive : std::false_type
-{};
+template <typename _StateDef, typename _Enable = void>
+struct contained_states;
 
 template <typename _StateDef>
-struct is_in_context_recursive<_StateDef, _StateDef, void> : std::true_type
-{};
-
-template <typename _StateDef, typename ... _ContextDef>
-struct is_in_context_recursive<_StateDef, std::tuple<_ContextDef...>>
-: std::disjunction<is_in_context_recursive<_StateDef, _ContextDef>...>
-{};
-
-template <typename ... _StateDef, typename _ContextDef>
-struct is_in_context_recursive<std::tuple<_StateDef...>, _ContextDef> 
-: std::disjunction<is_in_context_recursive<_StateDef, _ContextDef>...>
-{};
-
-template <typename _StateDef, typename _ContextDef>
-struct is_in_context_recursive<_StateDef, _ContextDef, std::enable_if_t<
-        !std::is_same_v<_StateDef, _ContextDef> &&
-        !std::is_void_v<typename _ContextDef::SubStates>
-    >>
-: is_in_context_recursive<_StateDef, typename _ContextDef::SubStates>
-{};
-
-template <typename _StateDef, typename _ContextDef>
-struct is_in_context_recursive<_StateDef, _ContextDef, std::enable_if_t<
-        !std::is_same_v<_StateDef, _ContextDef> &&
-        !std::is_void_v<typename _ContextDef::Regions>
-    >>
-: is_in_context_recursive<_StateDef, typename _ContextDef::Regions>
-{};
-
-template <typename _StateDef, typename _ContextDef>
-constexpr bool is_in_context_recursive_v = is_in_context_recursive<_StateDef, _ContextDef>::value;
-
-template <typename _StateDef, typename _StateDefToCompare, typename _PotentialSuperState, typename Enable = void>
-struct super_state
+struct contained_states<_StateDef, std::enable_if_t<is_simple_state_v<_StateDef>>>
 {
-    using type = void;
-};
-
-template <typename _StateDef, typename ... _SubStateOfPotentialSuperstate, typename _PotentialSuperState>
-struct super_state<_StateDef, std::tuple<_SubStateOfPotentialSuperstate...>, _PotentialSuperState, void>
-{
-    using type = typename first_non_void<typename super_state<_StateDef, _SubStateOfPotentialSuperstate, _PotentialSuperState>::type...>::type;
-};
-
-template <typename _StateDef, typename _SubStateOfPotentialSuperstate, typename _PotentialSuperState>
-struct super_state<_StateDef, _SubStateOfPotentialSuperstate, _PotentialSuperState, std::enable_if_t<
-        !std::is_void_v<typename _SubStateOfPotentialSuperstate::SubStates> &&
-        !std::is_same_v<_StateDef, _SubStateOfPotentialSuperstate> &&
-        is_in_context_recursive_v<_StateDef, _SubStateOfPotentialSuperstate>
-    >>
-{
-    using SubType = typename super_state<_StateDef, typename _SubStateOfPotentialSuperstate::SubStates, _SubStateOfPotentialSuperstate>::type;
-    using type = typename first_non_void<SubType, _SubStateOfPotentialSuperstate>::type;
-};
-
-template <typename _StateDef, typename _SubStateOfPotentialSuperstate, typename _PotentialSuperState>
-struct super_state<_StateDef, _SubStateOfPotentialSuperstate, _PotentialSuperState, std::enable_if_t<
-        !std::is_void_v<typename _SubStateOfPotentialSuperstate::Regions> &&
-        !std::is_same_v<_StateDef, _SubStateOfPotentialSuperstate> &&
-        is_in_context_recursive_v<_StateDef, _SubStateOfPotentialSuperstate>
-    >>
-{
-    using SubType = typename super_state<_StateDef, typename _SubStateOfPotentialSuperstate::Regions, _SubStateOfPotentialSuperstate>::type;
-    using type = typename first_non_void<SubType, _SubStateOfPotentialSuperstate>::type;
-};
-
-template <typename _StateDef, typename _PotentialSuperState>
-struct super_state<_StateDef, _StateDef, _PotentialSuperState, void>
-{
-    using type = _PotentialSuperState;
+    using direct = std::tuple<>;
+    using recursive = std::tuple<>;
 };
 
 template <typename _StateDef>
-using super_state_t  = typename super_state<_StateDef, typename _StateDef::TopStateDef, typename _StateDef::TopStateDef>::type;
+struct contained_states<_StateDef, std::enable_if_t<is_composite_state_v<_StateDef>>>
+{
+    using direct = typename _StateDef::SubStates;
+    using recursive = tuple_join_t<direct, typename contained_states<direct>::recursive>;
+};
+
+template <typename _StateDef>
+struct contained_states<_StateDef, std::enable_if_t<is_orthogonal_state_v<_StateDef>>>
+{
+    using direct = typename _StateDef::Regions;
+    using recursive = tuple_join_t<direct, typename contained_states<direct>::recursive>;
+};
+
+template <typename ... _StateDef>
+struct contained_states<std::tuple<_StateDef...>, void>
+{
+    using recursive = tuple_join_t<typename contained_states<_StateDef>::recursive...>;
+};
+
+template <typename _StateDef>
+using contained_states_direct_t = typename contained_states<_StateDef>::direct;
+
+template <typename _StateDef>
+using contained_states_recursive_t = typename contained_states<_StateDef>::recursive;
+
+template <typename _StateDef>
+using all_states_t = tuple_join_t<_StateDef, contained_states_recursive_t<_StateDef>>;
+
+template <typename _StateDef>
+constexpr std::size_t state_id_v = index_v<_StateDef, all_states_t<typename _StateDef::TopStateDef>>;
+
+template <typename _StateDef>
+struct state_combination
+{
+    static constexpr std::size_t value = 1 << state_id_v<_StateDef>;
+};
+
+template <typename ... _StateDef>
+struct state_combination<std::tuple<_StateDef...>>
+{
+    static constexpr std::size_t value = ((1 << state_id_v<_StateDef>) | ...);
+};
+
+template <>
+struct state_combination<std::tuple<>>
+{
+    static constexpr std::size_t value = 0;
+};
+
+template <typename _StateDef>
+constexpr std::size_t state_combination_recursive_v = state_combination<all_states_t<_StateDef>>::value;
+
+template <typename _StateDef>
+constexpr std::size_t state_combination_v = state_combination<_StateDef>::value;
+
+template <typename _StateDef>
+constexpr std::size_t state_count_v = std::tuple_size_v<all_states_t<_StateDef>>;
+
+template <typename _StateDef>
+constexpr std::size_t state_combination_count_v = (1 << state_count_v<_StateDef> + 1);
+
+template <typename _StateDef, typename _ContextDef>
+constexpr bool is_in_context_recursive_v = (1 << state_id_v<_StateDef>) & state_combination_recursive_v<_ContextDef>;
+
+template <typename _StateDef, typename _AllStateDefs>
+struct super_state;
+
+template <typename _StateDef, typename ... _OtherStateDef>
+struct super_state<_StateDef, std::tuple<_OtherStateDef...>>
+{
+    using type = first_non_void_t<
+        std::conditional_t<
+            static_cast<bool>(state_combination_v<contained_states_direct_t<_OtherStateDef>> & state_combination_v<_StateDef>),
+            _OtherStateDef,
+            void>...
+        >;
+};
+
+template <typename _StateDef>
+using super_state_t  = typename super_state<_StateDef, all_states_t<typename _StateDef::TopStateDef>>::type;
 
 template <typename _StateDef, typename SFINAE = void>
 struct initial_state 
@@ -222,83 +234,30 @@ struct initial_state<std::tuple<_RegionDef...>, void>
 template <typename _StateDef>
 using initial_state_t = typename initial_state<_StateDef>::type;
 
-template <typename _StateDef, typename _Enable = void>
-struct all_states;
-
-template <typename _StateDef>
-struct all_states<_StateDef, std::enable_if_t<is_simple_state_v<_StateDef>>>
-{
-    using type = std::tuple<_StateDef>;
-};
-
-template <typename ... _StateDef>
-struct all_states<std::tuple<_StateDef...>, void>
-{
-    using type = tuple_join_t<typename all_states<_StateDef>::type...>;
-};
-
-template <typename _StateDef>
-struct all_states<_StateDef, std::enable_if_t<is_composite_state_v<_StateDef>>>
-{
-    using type = tuple_add_t<_StateDef, typename all_states<typename _StateDef::SubStates>::type>;
-};
-
-template <typename _StateDef>
-struct all_states<_StateDef, std::enable_if_t<is_orthogonal_state_v<_StateDef>>>
-{
-    using type = tuple_add_t<_StateDef, typename all_states<typename _StateDef::Regions>::type>;
-};
-
-template <typename _StateDef>
-using all_states_t = typename all_states<_StateDef>::type;
-
-template <typename _StateDef>
-constexpr std::size_t state_id_v = index_v<_StateDef, all_states_t<typename _StateDef::TopStateDef>>;
-
-template <typename _StateDefTuple>
-struct state_combination;
-
-template <typename ... _StateDef>
-struct state_combination<std::tuple<_StateDef...>>
-{
-    static constexpr std::size_t value = ((1 << state_id_v<_StateDef>) | ...);
-    static constexpr std::array<std::size_t, sizeof...(_StateDef)> ids = {state_id_v<_StateDef>...};
-};
-
-template <typename _StateDef>
-constexpr std::size_t state_combination_v = state_combination<all_states_t<_StateDef>>::value;
-
-template <typename _StateDef>
-const auto state_ids_v = state_combination<all_states_t<_StateDef>>::ids;
-
-template <typename _StateDef>
-constexpr std::size_t state_count_v = std::tuple_size_v<all_states_t<_StateDef>>;
-
-template <typename _StateDef>
-constexpr std::size_t state_combination_count_v = (1 << state_count_v<_StateDef> + 1);
-
 template <typename ... _SubStateDef>
 std::size_t direct_substate_to_enter_f(std::size_t target_combination, state_spec<std::tuple<_SubStateDef...>>) {
     std::size_t substate_local_id = 0;
-    (static_cast<bool>(substate_local_id++, state_combination_v<_SubStateDef> & target_combination) || ...)
+    (static_cast<bool>(substate_local_id++, state_combination_recursive_v<_SubStateDef> & target_combination) || ...)
         || (substate_local_id++, true);
     return substate_local_id - 1;
 }
 
 template <typename _StateDef, typename _Enable = void>
-struct mixin;
+class mixin;
 
 template <typename _StateDef>
-struct SimpleStateMixin;
+class SimpleStateMixin;
 
 template <typename _StateDef>
-struct CompositeStateMixin;
+class CompositeStateMixin;
 
 template <typename _StateDef>
-struct OrthogonalStateMixin;
+class OrthogonalStateMixin;
 
 template <typename _StateMixin>
-struct TopStateMixin;
+class TopStateMixin;
+
+class RootStateMixin;
 
 template <typename _StateDef>
 struct mixin<_StateDef, std::enable_if_t<is_simple_state_v<_StateDef>>>
@@ -342,6 +301,12 @@ struct mixin<std::tuple<_T...>>
     using type = std::tuple<typename mixin<_T>::type...>;
 };
 
+template <>
+struct mixin<void, void>
+{
+    using type = RootStateMixin;
+};
+
 template <typename _StateDef>
 using mixin_t = typename mixin<_StateDef>::type;
 
@@ -352,7 +317,7 @@ auto operator+(std::tuple<bool, std::size_t> lhs, std::tuple<bool, std::size_t> 
 template <typename ... _StateDef>
 void remove_conflicting(std::size_t& target_combination, state_spec<std::tuple<_StateDef...>>) {
     bool already_matched = false;
-    ((already_matched ? target_combination &= ~state_combination_v<_StateDef> : (already_matched = target_combination & state_combination_v<_StateDef>)), ...);
+    ((already_matched ? target_combination &= ~state_combination_recursive_v<_StateDef> : (already_matched = target_combination & state_combination_recursive_v<_StateDef>)), ...);
 }
 
 }

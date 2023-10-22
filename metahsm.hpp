@@ -61,6 +61,7 @@ public:
     using TopStateDef = typename decltype(_StateDef::top_state_spec())::type;
     using SuperStateDef = super_state_t<_StateDef>;
     using SuperStateMixin = mixin_t<SuperStateDef>;
+
     struct Initializer
     {
         SuperStateMixin& super_state_mixin;
@@ -150,8 +151,8 @@ public:
         auto is_target_in_context = overload{
             [&](auto& active_sub_state) {
                 using ActiveSubStateDef = typename std::remove_reference_t<decltype(active_sub_state)>::StateDef;
-                return static_cast<bool>(target_combination & state_combination_v<ActiveSubStateDef>)
-                    || (!static_cast<bool>(target_combination & state_combination_v<SubStates>) && std::is_same_v<initial_state_t<_StateDef>, ActiveSubStateDef>); 
+                return static_cast<bool>(target_combination & state_combination_recursive_v<ActiveSubStateDef>)
+                    || (!static_cast<bool>(target_combination & state_combination_recursive_v<SubStates>) && std::is_same_v<initial_state_t<_StateDef>, ActiveSubStateDef>); 
             },
             [](std::monostate) { return false; }
         };
@@ -175,7 +176,7 @@ private:
         return std::array{&enter_substate<_SubStateDef>..., &enter_substate<initial_state_t<_StateDef>>};
     }
 
-    to_variant_t<tuple_add_t<std::monostate, mixin_t<SubStates>>> active_sub_state_;
+    to_variant_t<tuple_join_t<std::monostate, mixin_t<SubStates>>> active_sub_state_;
     static constexpr std::array<void(CompositeStateMixin<_StateDef>::*)(std::size_t), std::tuple_size_v<SubStates> + 1> lookup_table = init_lookup_table(state_spec<SubStates>{});
 };
 
@@ -229,6 +230,11 @@ private:
     mixin_t<Regions> regions_;
 };
 
+
+
+class RootStateMixin
+{};
+
 template <typename _TopStateDef>
 class TopState : public StateCrtp<_TopStateDef, _TopStateDef> , public TopStateBase
 {};
@@ -240,7 +246,7 @@ class TopStateMixin : public _StateMixin
     using typename _StateMixin::Initializer;
 public:
     TopStateMixin(StateMachine<StateDef>& state_machine)
-    : _StateMixin(Initializer{*this, state_combination_v<initial_state_t<StateDef>>}),
+    : _StateMixin(Initializer{root_state_mixin_, state_combination_recursive_v<initial_state_t<StateDef>>}),
       state_machine_{state_machine}
     {}
 
@@ -249,8 +255,8 @@ public:
 
 private:
     StateMachine<StateDef>& state_machine_;
+    RootStateMixin root_state_mixin_;
 };
-
 
 //=====================================================================================================//
 //                                         STATE MACHINE                                               //
