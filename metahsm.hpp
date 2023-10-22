@@ -199,7 +199,7 @@ template <typename _StateDef>
 class OrthogonalStateMixin : public StateMixin<_StateDef>
 {
 public:
-    using Regions = typename _StateDef::Regions;
+    using Regions = reverse_tuple_t<typename _StateDef::Regions>;
     using typename StateMixin<_StateDef>::TopStateDef;
     using typename StateMixin<_StateDef>::SuperStateMixin;
     using typename StateMixin<_StateDef>::Initializer;
