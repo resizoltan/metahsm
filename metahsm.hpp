@@ -102,7 +102,7 @@ public:
 
     template <typename _TargetStateDef>
     void set_transition() {
-        target_combination_ = 1 << state_id_v<_TargetStateDef>;
+        target_combination_ = state_combination_v<_TargetStateDef>;
     }
 
 protected:
@@ -130,7 +130,8 @@ public:
     template <typename _DirectSubStateToEnter>
     void enter_substate(std::size_t target_combination){
         using T = mixin_t<_DirectSubStateToEnter>;
-         active_sub_state_.template emplace<T>(typename T::Initializer{this->mixin(), target_combination});
+        active_sub_state_.template emplace<T>(typename T::Initializer{this->mixin(), target_combination});
+        active_state_id_ = state_id_v<_DirectSubStateToEnter>;
     }
 
     template <typename _Event>
@@ -145,16 +146,11 @@ public:
 
     void executeTransition(std::size_t target_combination) {
         remove_conflicting(target_combination, state_id<SubStates>{});
-        auto is_target_in_context = overload{
-            [&](auto& active_sub_state) {
-                using ActiveSubStateDef = typename std::remove_reference_t<decltype(active_sub_state)>::StateDef;
-                return static_cast<bool>(target_combination & state_combination_recursive_v<ActiveSubStateDef>)
-                    || (!static_cast<bool>(target_combination & state_combination_recursive_v<SubStates>) && std::is_same_v<initial_state_t<_StateDef>, ActiveSubStateDef>); 
-            },
-            [](std::monostate) { return false; }
-        };
+        auto id = state_combination_v<std::tuple_element_t<0, SubStates>>;
+        bool is_target_in_context = static_cast<bool>(target_combination & (1 << active_state_id_))
+            || (!static_cast<bool>(target_combination & state_combination_v<SubStates>) && initial_state_id_ == active_state_id_);
 
-        if(std::visit(is_target_in_context, active_sub_state_)) {
+        if(is_target_in_context) {
             auto do_execute_transition = overload{
                 [&](auto& active_sub_state){ active_sub_state.executeTransition(target_combination); },
                 [](std::monostate) { }
@@ -174,6 +170,8 @@ private:
     }
 
     to_variant_t<tuple_join_t<std::monostate, mixin_t<SubStates>>> active_sub_state_;
+    std::size_t active_state_id_;
+    static constexpr std::size_t initial_state_id_ = state_id_v<initial_state_t<_StateDef>>;
     static constexpr std::array<void(CompositeStateMixin<_StateDef>::*)(std::size_t), std::tuple_size_v<SubStates> + 1> lookup_table = init_lookup_table(state_id<SubStates>{});
 };
 
@@ -210,6 +208,7 @@ public:
     OrthogonalStateMixin(Initializer initializer)
     : OrthogonalStateMixin<_StateDef>(initializer, std::make_index_sequence<std::tuple_size_v<Regions>>{})
     {}
+
 
     template <typename _Event>
     auto handleEvent(const _Event& e) {
