@@ -13,56 +13,38 @@ struct SimpleStateBase : StateBase {};
 struct CompositeStateBase : StateBase {};
 struct TopStateBase : CompositeStateBase {};
 
-template <typename _Entity, typename _Enable = void>
-struct is_state : std::false_type {};
-
 template <typename _Entity>
-struct is_state<_Entity, std::enable_if_t<std::is_base_of_v<StateBase, _Entity>>> : std::true_type {};
+constexpr bool is_state_v = std::is_base_of_v<StateBase, _Entity>;
 
 template <typename _Entity, typename _SFINAE = void>
-struct is_simple_state : is_state<_Entity> {};
+struct contains_regions : std::false_type {};
 
 template <typename _Entity>
-struct is_simple_state<_Entity, std::void_t<std::tuple<typename _Entity::SubStates>>> : std::false_type {};
+struct contains_regions<_Entity, std::void_t<std::tuple<typename _Entity::Regions>>> : std::true_type {};
 
 template <typename _Entity>
-struct is_simple_state<_Entity, std::void_t<std::tuple<typename _Entity::Regions>>> : std::false_type {};
-
-template <typename _Entity>
-constexpr bool is_simple_state_v = is_simple_state<_Entity>::value;
+constexpr bool contains_regions_v = contains_regions<_Entity>::value;
 
 template <typename _Entity, typename _SFINAE = void>
-struct is_composite_state : std::false_type {};
+struct contains_substates : std::false_type {};
 
 template <typename _Entity>
-struct is_composite_state<_Entity, std::void_t<std::tuple<typename _Entity::SubStates>>> : std::true_type {};
+struct contains_substates<_Entity, std::void_t<std::tuple<typename _Entity::SubStates>>> : std::true_type {};
 
 template <typename _Entity>
-struct is_composite_state<_Entity, std::void_t<std::tuple<typename _Entity::Regions>>> : std::false_type {};
+constexpr bool contains_substates_v = contains_substates<_Entity>::value;
 
 template <typename _Entity>
-constexpr bool is_composite_state_v = is_composite_state<_Entity>::value;
-
-template <typename _Entity, typename _SFINAE = void>
-struct is_orthogonal_state : std::false_type {};
+constexpr bool is_simple_state_v = is_state_v<_Entity> && !contains_substates_v<_Entity> && !contains_regions_v<_Entity>;
 
 template <typename _Entity>
-struct is_orthogonal_state<_Entity, std::void_t<std::tuple<typename _Entity::SubStates>>> : std::false_type {};
+constexpr bool is_composite_state_v = is_state_v<_Entity> && contains_substates_v<_Entity> && !contains_regions_v<_Entity>;
 
 template <typename _Entity>
-struct is_orthogonal_state<_Entity, std::void_t<std::tuple<typename _Entity::Regions>>> : std::true_type {};
+constexpr bool is_orthogonal_state_v = is_state_v<_Entity> && !contains_substates_v<_Entity> && contains_regions_v<_Entity>;
 
 template <typename _Entity>
-constexpr bool is_orthogonal_state_v = is_orthogonal_state<_Entity>::value;
-
-template <typename _Entity, typename _Enable = void>
-struct is_top_state : std::false_type {};
-
-template <typename _Entity>
-struct is_top_state<_Entity, std::enable_if_t<std::is_base_of_v<TopStateBase, _Entity>>> : std::true_type {};
-
-template <typename _Entity>
-constexpr bool is_top_state_v = is_top_state<_Entity>::value;
+constexpr bool is_top_state_v = std::is_base_of_v<TopStateBase, _Entity>;
 
 template <typename _StateDef, typename _Event, typename _SFINAE = void>
 struct has_reaction_to_event : public std::false_type
