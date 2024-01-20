@@ -35,13 +35,13 @@ template <typename _Entity>
 constexpr bool contains_substates_v = contains_substates<_Entity>::value;
 
 template <typename _Entity>
-constexpr bool is_simple_state_v = is_state_v<_Entity> && !contains_substates_v<_Entity> && !contains_regions_v<_Entity>;
+constexpr bool is_simple_state_v = is_state_v<_Entity> and not contains_substates_v<_Entity> and not contains_regions_v<_Entity>;
 
 template <typename _Entity>
-constexpr bool is_composite_state_v = is_state_v<_Entity> && contains_substates_v<_Entity> && !contains_regions_v<_Entity>;
+constexpr bool is_composite_state_v = is_state_v<_Entity> and contains_substates_v<_Entity> and not contains_regions_v<_Entity>;
 
 template <typename _Entity>
-constexpr bool is_orthogonal_state_v = is_state_v<_Entity> && !contains_substates_v<_Entity> && contains_regions_v<_Entity>;
+constexpr bool is_orthogonal_state_v = is_state_v<_Entity> and not contains_substates_v<_Entity> and contains_regions_v<_Entity>;
 
 template <typename _Entity>
 constexpr bool is_top_state_v = std::is_base_of_v<TopStateBase, _Entity>;
@@ -224,9 +224,6 @@ std::size_t direct_substate_to_enter_f(std::size_t target_combination, state_id<
     return substate_local_id - 1;
 }
 
-template <typename _StateDef, typename _Enable = void>
-class mixin;
-
 template <typename _StateDef>
 class SimpleStateMixin;
 
@@ -242,51 +239,23 @@ class TopStateMixin;
 class RootStateMixin;
 
 template <typename _StateDef>
-struct mixin<_StateDef, std::enable_if_t<is_simple_state_v<_StateDef>>>
-{
-    using type = SimpleStateMixin<_StateDef>;
-};
+auto deduce_mixin_type() {
+    if constexpr (is_simple_state_v<_StateDef>) return type_identity<SimpleStateMixin<_StateDef>>();
+    else if constexpr (is_composite_state_v<_StateDef>) return type_identity<CompositeStateMixin<_StateDef>>();
+    else if constexpr (is_orthogonal_state_v<_StateDef>) return type_identity<OrthogonalStateMixin<_StateDef>>();
+    else return type_identity<RootStateMixin>();
+}
 
 template <typename _StateDef>
-struct mixin<_StateDef, std::enable_if_t<is_composite_state_v<_StateDef> && !is_top_state_v<_StateDef>>>
-{
-    using type = CompositeStateMixin<_StateDef>;
+struct mixin {
+    using base_type = typename decltype(deduce_mixin_type<_StateDef>())::type;
+    using type = std::conditional_t<is_top_state_v<_StateDef>, TopStateMixin<base_type>, base_type>;
 };
 
-template <typename _StateDef>
-struct mixin<_StateDef, std::enable_if_t<is_orthogonal_state_v<_StateDef> && !is_top_state_v<_StateDef>>>
+template <typename ... _StateDef>
+struct mixin<std::tuple<_StateDef...>>
 {
-    using type = OrthogonalStateMixin<_StateDef>;
-};
-
-template <typename _StateDef>
-struct mixin<_StateDef, std::enable_if_t<is_simple_state_v<_StateDef> && is_top_state_v<_StateDef>>>
-{
-    using type = TopStateMixin<SimpleStateMixin<_StateDef>>;
-};
-
-template <typename _StateDef>
-struct mixin<_StateDef, std::enable_if_t<is_composite_state_v<_StateDef> && is_top_state_v<_StateDef>>>
-{
-    using type = TopStateMixin<CompositeStateMixin<_StateDef>>;
-};
-
-template <typename _StateDef>
-struct mixin<_StateDef, std::enable_if_t<is_orthogonal_state_v<_StateDef> && is_top_state_v<_StateDef>>>
-{
-    using type = TopStateMixin<OrthogonalStateMixin<_StateDef>>;
-};
-
-template <typename ... _T>
-struct mixin<std::tuple<_T...>>
-{
-    using type = std::tuple<typename mixin<_T>::type...>;
-};
-
-template <>
-struct mixin<void, void>
-{
-    using type = RootStateMixin;
+    using type = std::tuple<typename mixin<_StateDef>::type...>;
 };
 
 template <typename _StateDef>

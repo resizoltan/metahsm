@@ -5,6 +5,8 @@
 
 namespace metahsm {
 
+template<class T>
+struct type_identity { using type = T; };
 
 template <typename _T>
 struct as_tuple {
