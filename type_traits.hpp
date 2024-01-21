@@ -201,13 +201,13 @@ struct default_initial_state;
 template <typename _StateDef, bool has_initial = has_initial_v<_StateDef>>
 struct initial_state
 {
-    using type = typename default_initial_state<_StateDef>::type;
+    using type = typename _StateDef::Initial;
 };
 
 template <typename _StateDef>
-struct initial_state<_StateDef, true>
+struct initial_state<_StateDef, false>
 {
-    using type = typename _StateDef::Initial;
+    using type = typename default_initial_state<_StateDef>::type;
 };
 
 template <typename _RegionDefs>
