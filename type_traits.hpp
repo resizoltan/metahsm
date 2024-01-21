@@ -64,7 +64,7 @@ using base_t = std::conditional_t<
     void>;
 
 template <typename _StateDef, typename _Event, typename _SFINAE = void>
-struct has_reaction_to_event : public std::false_type
+struct has_reaction_to_event : std::false_type
 {};
 
 template <typename _StateDef, typename _Event>
@@ -76,7 +76,7 @@ template <typename _StateDef, typename _Event>
 constexpr bool has_reaction_to_event_v = has_reaction_to_event<_StateDef, _Event>::value;
 
 template <typename _StateDef, typename _SFINAE = void>
-struct has_entry_action : public std::false_type
+struct has_entry_action : std::false_type
 {};
 
 template <typename _StateDef>
@@ -88,7 +88,7 @@ template <typename _StateDef>
 constexpr bool has_entry_action_v = has_entry_action<_StateDef>::value;
 
 template <typename _StateDef, typename _SFINAE = void>
-struct has_exit_action : public std::false_type
+struct has_exit_action : std::false_type
 {};
 
 template <typename _StateDef>
@@ -140,21 +140,6 @@ using all_states_t = tuple_join_t<_StateDef, contained_states_recursive_t<_State
 
 template <typename _StateDef>
 constexpr std::size_t state_id_v = index_v<_StateDef, all_states_t<typename _StateDef::TopStateDef>>;
-
-template <typename _StateDef>
-struct state_id
-{
-    using type = std::integral_constant<std::size_t, state_id_v<_StateDef>>;
-};
-
-template <typename ... _StateDef>
-struct state_id<std::tuple<_StateDef...>>
-{
-    using type = std::tuple<typename state_id<_StateDef>::type...>;
-};
-
-template <typename _StateDef>
-using state_id_t = typename state_id<_StateDef>::type;
 
 template <typename _StateDef>
 struct state_combination
@@ -235,7 +220,7 @@ template <typename _StateDef>
 using initial_state_t = typename initial_state<_StateDef>::type;
 
 template <typename ... _SubStateDef>
-std::size_t direct_substate_to_enter_f(std::size_t target_combination, state_id<std::tuple<_SubStateDef...>>) {
+std::size_t direct_substate_to_enter_f(std::size_t target_combination, type_identity<std::tuple<_SubStateDef...>>) {
     std::size_t substate_local_id = 0;
     (static_cast<bool>(substate_local_id++, state_combination_recursive_v<_SubStateDef> & target_combination) || ...)
         || (substate_local_id++, true);
@@ -292,7 +277,7 @@ auto operator+(std::tuple<bool, std::size_t> lhs, std::tuple<bool, std::size_t> 
 }
 
 template <typename ... _StateDef>
-void remove_conflicting(std::size_t& target_combination, state_id<std::tuple<_StateDef...>>) {
+void remove_conflicting(std::size_t& target_combination, type_identity<std::tuple<_StateDef...>>) {
     bool already_matched = false;
     ((already_matched ? target_combination &= ~state_combination_recursive_v<_StateDef> : (already_matched = target_combination & state_combination_recursive_v<_StateDef>)), ...);
 }

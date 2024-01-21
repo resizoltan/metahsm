@@ -123,7 +123,7 @@ public:
     CompositeStateMixin(Initializer initializer)
     : StateMixin<_StateDef>(initializer)
     {
-        std::size_t substate_to_enter_local_id = direct_substate_to_enter_f(initializer.target_combination, state_id<SubStates>{});
+        std::size_t substate_to_enter_local_id = direct_substate_to_enter_f(initializer.target_combination, type_identity<SubStates>{});
         std::invoke(lookup_table[substate_to_enter_local_id], this, initializer.target_combination);
     }
 
@@ -145,7 +145,7 @@ public:
     }
 
     void executeTransition(std::size_t target_combination) {
-        remove_conflicting(target_combination, state_id<SubStates>{});
+        remove_conflicting(target_combination, type_identity<SubStates>{});
         auto id = state_combination_v<std::tuple_element_t<0, SubStates>>;
         bool is_target_in_context = static_cast<bool>(target_combination & (1 << active_state_id_))
             || (!static_cast<bool>(target_combination & state_combination_v<SubStates>) && initial_state_id_ == active_state_id_);
@@ -158,21 +158,21 @@ public:
             std::visit(do_execute_transition, active_sub_state_); 
         }
         else {
-            std::size_t substate_to_enter_local_id = direct_substate_to_enter_f(target_combination, state_id<SubStates>{});
+            std::size_t substate_to_enter_local_id = direct_substate_to_enter_f(target_combination, type_identity<SubStates>{});
             std::invoke(lookup_table[substate_to_enter_local_id], this, target_combination);
         }
     }
 
 private:
     template <typename ... _SubStateDef>
-    static constexpr auto init_lookup_table(state_id<std::tuple<_SubStateDef...>>) {
+    static constexpr auto init_lookup_table(type_identity<std::tuple<_SubStateDef...>>) {
         return std::array{&enter_substate<_SubStateDef>..., &enter_substate<initial_state_t<_StateDef>>};
     }
 
     to_variant_t<tuple_join_t<std::monostate, mixins_t<SubStates>>> active_sub_state_;
     std::size_t active_state_id_;
     static constexpr std::size_t initial_state_id_ = state_id_v<initial_state_t<_StateDef>>;
-    static constexpr std::array<void(CompositeStateMixin<_StateDef>::*)(std::size_t), std::tuple_size_v<SubStates> + 1> lookup_table = init_lookup_table(state_id<SubStates>{});
+    static constexpr std::array<void(CompositeStateMixin<_StateDef>::*)(std::size_t), std::tuple_size_v<SubStates> + 1> lookup_table = init_lookup_table(type_identity<SubStates>{});
 };
 
 
