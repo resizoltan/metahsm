@@ -33,6 +33,15 @@ struct has_substates<_Entity, std::void_t<std::tuple<typename _Entity::SubStates
 template <typename _Entity>
 constexpr bool has_substates_v = has_substates<_Entity>::value;
 
+template <typename _Entity, typename _SFINAE = void>
+struct has_initial : std::false_type {};
+
+template <typename _Entity>
+struct has_initial<_Entity, std::void_t<std::tuple<typename _Entity::Initial>>> : std::true_type {};
+
+template <typename _Entity>
+constexpr bool has_initial_v = has_initial<_Entity>::value;
+
 template <bool has_substates, bool has_regions>
 struct base;
 
@@ -165,14 +174,8 @@ constexpr std::size_t state_combination_recursive_v = state_combination<all_stat
 template <typename _StateDef>
 constexpr std::size_t state_combination_v = state_combination<_StateDef>::value;
 
-template <typename _StateDef>
-constexpr std::size_t state_count_v = std::tuple_size_v<all_states_t<_StateDef>>;
-
-template <typename _StateDef>
-constexpr std::size_t state_combination_count_v = (1 << state_count_v<_StateDef> + 1);
-
 template <typename _StateDef, typename _ContextDef>
-constexpr bool is_in_context_recursive_v = (1 << state_id_v<_StateDef>) & state_combination_recursive_v<_ContextDef>;
+constexpr bool is_in_context_recursive_v = state_combination_v<_StateDef> & state_combination_recursive_v<_ContextDef>;
 
 template <typename _StateDef, typename _AllStateDefs>
 struct super_state;
@@ -192,28 +195,40 @@ struct super_state<_StateDef, std::tuple<_OtherStateDef...>>
 template <typename _StateDef>
 using super_state_t  = typename super_state<_StateDef, all_states_t<typename _StateDef::TopStateDef>>::type;
 
-template <typename _StateDef, typename SFINAE = void>
-struct initial_state 
+template <typename _StateDef, typename _StateBase = base_t<_StateDef>>
+struct default_initial_state;
+
+template <typename _StateDef, bool has_initial = has_initial_v<_StateDef>>
+struct initial_state
+{
+    using type = typename default_initial_state<_StateDef>::type;
+};
+
+template <typename _StateDef>
+struct initial_state<_StateDef, true>
+{
+    using type = typename _StateDef::Initial;
+};
+
+template <typename _RegionDefs>
+struct initial_states;
+
+template <typename ... _RegionDef>
+struct initial_states<std::tuple<_RegionDef...>>
+{
+    using type = std::tuple<typename initial_state<_RegionDef>::type...>;
+};
+
+template <typename _StateDef>
+struct default_initial_state<_StateDef, CompositeStateBase>
 {
     using type = std::tuple_element_t<0, typename _StateDef::SubStates>;
 };
 
 template <typename _StateDef>
-struct initial_state<_StateDef, std::void_t<typename _StateDef::Initial>>
+struct default_initial_state<_StateDef, OrthogonalStateBase>
 {
-    using type = typename _StateDef::Initial;
-};
-
-template <typename _StateDef>
-struct initial_state<_StateDef, std::void_t<typename _StateDef::Regions>>
-{
-    using type = typename initial_state<typename _StateDef::Regions>::type;
-};
-
-template <typename ... _RegionDef>
-struct initial_state<std::tuple<_RegionDef...>, void>
-{
-    using type = std::tuple<typename initial_state<_RegionDef>::type...>;
+    using type = typename initial_states<typename _StateDef::Regions>::type;
 };
 
 template <typename _StateDef>
