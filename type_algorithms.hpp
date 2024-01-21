@@ -29,6 +29,18 @@ using as_tuple_t = typename as_tuple<_T>::type;
 template <typename ... _T>
 using tuple_join_t = decltype(std::tuple_cat(std::declval<as_tuple_t<_T>>()...));
 
+template <typename Tuple>
+struct as_ref_tuple;
+
+template <typename ... T>
+struct as_ref_tuple<std::tuple<T...>>
+{
+    using type = std::tuple<T&...>;
+};
+
+template <typename T>
+using as_ref_tuple_t = typename as_ref_tuple<T>::type;
+
 template <typename _Tuple>
 struct reverse_tuple;
 

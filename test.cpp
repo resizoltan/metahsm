@@ -85,7 +85,7 @@ struct MyTopState : public TopState<MyTopState> {
         }
         auto react(Event1 event) {
             std::cout << "region1" << std::endl;
-            transition<Region0::State2>();
+            //transition<Region0::State2>();
             return true;
         }
 
@@ -110,8 +110,14 @@ struct MyTopState : public TopState<MyTopState> {
     };
     using Regions = std::tuple<Region0, Region1>;
 };
+
+template <typename T1, typename T2>
+void ass() {
+    static_assert(std::is_same_v<T1,T2>);
+}
 StateMachine<MyTopState> state_machine;
 int main(int argc, char *argv[]) {
+    ass<super_state_t<MyTopState>, RootState>();
     std::cout << "hi" << std::endl;
     state_machine.dispatch(Event1{}); 
     state_machine.dispatch(Event1{}); 

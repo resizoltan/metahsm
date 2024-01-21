@@ -235,7 +235,7 @@ template <typename _StateDef>
 using initial_state_t = typename initial_state<_StateDef>::type;
 
 template <typename ... _SubStateDef>
-std::size_t direct_substate_to_enter_f(std::size_t target_combination, type_identity<std::tuple<_SubStateDef...>>) {
+std::size_t compute_direct_substate(std::size_t target_combination, type_identity<std::tuple<_SubStateDef...>>) {
     std::size_t substate_local_id = 0;
     (static_cast<bool>(substate_local_id++, state_combination_recursive_v<_SubStateDef> & target_combination) || ...)
         || (substate_local_id++, true);
@@ -243,36 +243,43 @@ std::size_t direct_substate_to_enter_f(std::size_t target_combination, type_iden
 }
 
 template <typename _StateDef>
-class SimpleStateMixin;
+class SimpleStateWrapper;
 
 template <typename _StateDef>
-class CompositeStateMixin;
+class CompositeStateWrapper;
 
 template <typename _StateDef>
-class OrthogonalStateMixin;
+class OrthogonalStateWrapper;
+
+template <typename _StateMixin, typename _StateBase = base_t<typename _StateMixin::StateDef>>
+struct wrapper;
 
 template <typename _StateMixin>
-class TopStateMixin;
+struct wrapper<_StateMixin, SimpleStateBase> { using type = SimpleStateWrapper<_StateMixin>; };
 
-class RootStateMixin;
+template <typename _StateMixin>
+struct wrapper<_StateMixin, CompositeStateBase> { using type = CompositeStateWrapper<_StateMixin>; };
 
-template <typename _StateDef, typename _StateBase = base_t<_StateDef>>
-struct mixin;
+template <typename _StateMixin>
+struct wrapper<_StateMixin, OrthogonalStateBase> { using type = OrthogonalStateWrapper<_StateMixin>; };
+
+template <typename _StateMixin>
+using wrapper_t = typename wrapper<_StateMixin>::type;
+
+template <typename _StateMixins>
+struct wrappers;
+
+template <typename ... _StateMixin>
+struct wrappers<std::tuple<_StateMixin...>>
+{
+    using type = std::tuple<wrapper_t<_StateMixin>...>;
+};
+
+template <typename _StateMixins>
+using wrappers_t = typename wrappers<_StateMixins>::type;
 
 template <typename _StateDef>
-struct mixin<_StateDef, SimpleStateBase> { using type = SimpleStateMixin<_StateDef>; };
-
-template <typename _StateDef>
-struct mixin<_StateDef, CompositeStateBase> { using type = CompositeStateMixin<_StateDef>; };
-
-template <typename _StateDef>
-struct mixin<_StateDef, OrthogonalStateBase> { using type = OrthogonalStateMixin<_StateDef>; };
-
-template <typename _StateDef>
-struct mixin<_StateDef, RootState> { using type = RootStateMixin; };
-
-template <typename _StateDef>
-using mixin_t = std::conditional_t<is_top_state_v<_StateDef>, TopStateMixin<typename mixin<_StateDef>::type>, typename mixin<_StateDef>::type>;
+class StateMixin;
 
 template <typename _StateDefs>
 struct mixins;
@@ -280,12 +287,11 @@ struct mixins;
 template <typename ... _StateDef>
 struct mixins<std::tuple<_StateDef...>>
 {
-    using type = std::tuple<mixin_t<_StateDef>...>;
+    using type = std::tuple<StateMixin<_StateDef>...>;
 };
 
 template <typename _StateDefs>
 using mixins_t = typename mixins<_StateDefs>::type;
-
 
 auto operator+(std::tuple<bool, std::size_t> lhs, std::tuple<bool, std::size_t> rhs) {
     return std::make_tuple(std::get<0>(lhs) || std::get<0>(rhs), std::get<1>(lhs) | std::get<1>(rhs));
