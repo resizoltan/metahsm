@@ -169,7 +169,7 @@ private:
         return std::array{&enter_substate<_SubStateDef>..., &enter_substate<initial_state_t<_StateDef>>};
     }
 
-    to_variant_t<tuple_join_t<std::monostate, mixin_t<SubStates>>> active_sub_state_;
+    to_variant_t<tuple_join_t<std::monostate, mixins_t<SubStates>>> active_sub_state_;
     std::size_t active_state_id_;
     static constexpr std::size_t initial_state_id_ = state_id_v<initial_state_t<_StateDef>>;
     static constexpr std::array<void(CompositeStateMixin<_StateDef>::*)(std::size_t), std::tuple_size_v<SubStates> + 1> lookup_table = init_lookup_table(state_id<SubStates>{});
@@ -223,7 +223,7 @@ public:
     }
 
 private:
-    mixin_t<Regions> regions_;
+    mixins_t<Regions> regions_;
 };
 
 

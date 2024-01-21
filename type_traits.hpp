@@ -11,40 +11,57 @@ struct EntityBase {};
 struct StateBase : EntityBase {};
 struct SimpleStateBase : StateBase {};
 struct CompositeStateBase : StateBase {};
-struct TopStateBase : CompositeStateBase {};
+struct OrthogonalStateBase : StateBase {};
+struct TopStateBase {};
+struct RootState : StateBase {};
+
+template <typename _Entity, typename _SFINAE = void>
+struct has_regions : std::false_type {};
+
+template <typename _Entity>
+struct has_regions<_Entity, std::void_t<std::tuple<typename _Entity::Regions>>> : std::true_type {};
+
+template <typename _Entity>
+constexpr bool has_regions_v = has_regions<_Entity>::value;
+
+template <typename _Entity, typename _SFINAE = void>
+struct has_substates : std::false_type {};
+
+template <typename _Entity>
+struct has_substates<_Entity, std::void_t<std::tuple<typename _Entity::SubStates>>> : std::true_type {};
+
+template <typename _Entity>
+constexpr bool has_substates_v = has_substates<_Entity>::value;
+
+template <bool has_substates, bool has_regions>
+struct base;
+
+template <>
+struct base<false, false> { using type = SimpleStateBase; };
+
+template <>
+struct base<true, false> { using type = CompositeStateBase; };
+
+template <>
+struct base<false, true> { using type = OrthogonalStateBase; };
 
 template <typename _Entity>
 constexpr bool is_state_v = std::is_base_of_v<StateBase, _Entity>;
 
-template <typename _Entity, typename _SFINAE = void>
-struct contains_regions : std::false_type {};
-
-template <typename _Entity>
-struct contains_regions<_Entity, std::void_t<std::tuple<typename _Entity::Regions>>> : std::true_type {};
-
-template <typename _Entity>
-constexpr bool contains_regions_v = contains_regions<_Entity>::value;
-
-template <typename _Entity, typename _SFINAE = void>
-struct contains_substates : std::false_type {};
-
-template <typename _Entity>
-struct contains_substates<_Entity, std::void_t<std::tuple<typename _Entity::SubStates>>> : std::true_type {};
-
-template <typename _Entity>
-constexpr bool contains_substates_v = contains_substates<_Entity>::value;
-
-template <typename _Entity>
-constexpr bool is_simple_state_v = is_state_v<_Entity> and not contains_substates_v<_Entity> and not contains_regions_v<_Entity>;
-
-template <typename _Entity>
-constexpr bool is_composite_state_v = is_state_v<_Entity> and contains_substates_v<_Entity> and not contains_regions_v<_Entity>;
-
-template <typename _Entity>
-constexpr bool is_orthogonal_state_v = is_state_v<_Entity> and not contains_substates_v<_Entity> and contains_regions_v<_Entity>;
-
 template <typename _Entity>
 constexpr bool is_top_state_v = std::is_base_of_v<TopStateBase, _Entity>;
+
+template <typename _Entity>
+constexpr bool is_root_state_v = std::is_same_v<_Entity, RootState>;
+
+template <typename _Entity>
+using base_t = std::conditional_t<
+    is_state_v<_Entity>, 
+    std::conditional_t<
+        is_root_state_v<_Entity>,
+        RootState,
+        typename base<has_substates_v<_Entity>, has_regions_v<_Entity>>::type>, 
+    void>;
 
 template <typename _StateDef, typename _Event, typename _SFINAE = void>
 struct has_reaction_to_event : public std::false_type
@@ -82,41 +99,41 @@ struct has_exit_action<_StateDef, std::void_t<std::is_invocable<decltype(&_State
 template <typename _StateDef>
 constexpr bool has_exit_action_v = has_exit_action<_StateDef>::value;
 
-template <typename _StateDef, typename _Enable = void>
+template <typename _StateDef, typename _StateBase = void>
 struct contained_states;
 
 template <typename _StateDef>
-struct contained_states<_StateDef, std::enable_if_t<is_simple_state_v<_StateDef>>>
+struct contained_states<_StateDef, SimpleStateBase>
 {
     using direct = std::tuple<>;
-    using recursive = std::tuple<>;
+    using all = std::tuple<>;
 };
 
 template <typename _StateDef>
-struct contained_states<_StateDef, std::enable_if_t<is_composite_state_v<_StateDef>>>
+struct contained_states<_StateDef, CompositeStateBase>
 {
     using direct = typename _StateDef::SubStates;
-    using recursive = tuple_join_t<direct, typename contained_states<direct>::recursive>;
+    using all = tuple_join_t<direct, typename contained_states<direct>::all>;
 };
 
 template <typename _StateDef>
-struct contained_states<_StateDef, std::enable_if_t<is_orthogonal_state_v<_StateDef>>>
+struct contained_states<_StateDef, OrthogonalStateBase>
 {
     using direct = typename _StateDef::Regions;
-    using recursive = tuple_join_t<direct, typename contained_states<direct>::recursive>;
+    using all = tuple_join_t<direct, typename contained_states<direct>::all>;
 };
 
 template <typename ... _StateDef>
 struct contained_states<std::tuple<_StateDef...>, void>
 {
-    using recursive = tuple_join_t<typename contained_states<_StateDef>::recursive...>;
+    using all = tuple_join_t<typename contained_states<_StateDef, base_t<_StateDef>>::all...>;
 };
 
 template <typename _StateDef>
-using contained_states_direct_t = typename contained_states<_StateDef>::direct;
+using contained_states_direct_t = typename contained_states<_StateDef, base_t<_StateDef>>::direct;
 
 template <typename _StateDef>
-using contained_states_recursive_t = typename contained_states<_StateDef>::recursive;
+using contained_states_recursive_t = typename contained_states<_StateDef, base_t<_StateDef>>::all;
 
 template <typename _StateDef>
 using all_states_t = tuple_join_t<_StateDef, contained_states_recursive_t<_StateDef>>;
@@ -179,6 +196,7 @@ template <typename _StateDef, typename ... _OtherStateDef>
 struct super_state<_StateDef, std::tuple<_OtherStateDef...>>
 {
     using type = first_non_void_t<
+        RootState,
         std::conditional_t<
             static_cast<bool>(state_combination_v<contained_states_direct_t<_OtherStateDef>> & state_combination_v<_StateDef>),
             _OtherStateDef,
@@ -238,28 +256,36 @@ class TopStateMixin;
 
 class RootStateMixin;
 
-template <typename _StateDef>
-auto deduce_mixin_type() {
-    if constexpr (is_simple_state_v<_StateDef>) return type_identity<SimpleStateMixin<_StateDef>>();
-    else if constexpr (is_composite_state_v<_StateDef>) return type_identity<CompositeStateMixin<_StateDef>>();
-    else if constexpr (is_orthogonal_state_v<_StateDef>) return type_identity<OrthogonalStateMixin<_StateDef>>();
-    else return type_identity<RootStateMixin>();
-}
+template <typename _StateDef, typename _StateBase = base_t<_StateDef>>
+struct mixin;
 
 template <typename _StateDef>
-struct mixin {
-    using base_type = typename decltype(deduce_mixin_type<_StateDef>())::type;
-    using type = std::conditional_t<is_top_state_v<_StateDef>, TopStateMixin<base_type>, base_type>;
-};
+struct mixin<_StateDef, SimpleStateBase> { using type = SimpleStateMixin<_StateDef>; };
+
+template <typename _StateDef>
+struct mixin<_StateDef, CompositeStateBase> { using type = CompositeStateMixin<_StateDef>; };
+
+template <typename _StateDef>
+struct mixin<_StateDef, OrthogonalStateBase> { using type = OrthogonalStateMixin<_StateDef>; };
+
+template <typename _StateDef>
+struct mixin<_StateDef, RootState> { using type = RootStateMixin; };
+
+template <typename _StateDef>
+using mixin_t = std::conditional_t<is_top_state_v<_StateDef>, TopStateMixin<typename mixin<_StateDef>::type>, typename mixin<_StateDef>::type>;
+
+template <typename _StateDefs>
+struct mixins;
 
 template <typename ... _StateDef>
-struct mixin<std::tuple<_StateDef...>>
+struct mixins<std::tuple<_StateDef...>>
 {
-    using type = std::tuple<typename mixin<_StateDef>::type...>;
+    using type = std::tuple<mixin_t<_StateDef>...>;
 };
 
-template <typename _StateDef>
-using mixin_t = typename mixin<_StateDef>::type;
+template <typename _StateDefs>
+using mixins_t = typename mixins<_StateDefs>::type;
+
 
 auto operator+(std::tuple<bool, std::size_t> lhs, std::tuple<bool, std::size_t> rhs) {
     return std::make_tuple(std::get<0>(lhs) || std::get<0>(rhs), std::get<1>(lhs) | std::get<1>(rhs));

@@ -5,18 +5,23 @@
 
 namespace metahsm {
 
-template<class T>
-struct type_identity { using type = T; };
+template <typename T>
+struct type_identity{ using type = T; };
+
+template <typename>
+struct is_tuple: std::false_type {};
+
+template <typename ... T>
+struct is_tuple<std::tuple<T...>>: std::true_type {};
+
+template <typename T>
+constexpr bool is_tuple_v = is_tuple<T>::value;
 
 template <typename _T>
-struct as_tuple {
-    using type = std::tuple<_T>;
-};
+struct as_tuple { using type = std::tuple<_T>; };
 
 template <typename ... _T>
-struct as_tuple<std::tuple<_T...>> {
-    using type = std::tuple<_T...>;
-};
+struct as_tuple<std::tuple<_T...>> { using type = std::tuple<_T...>; };
 
 template <typename _T>
 using as_tuple_t = typename as_tuple<_T>::type;
@@ -54,26 +59,26 @@ struct to_variant<std::tuple<_T...>>
 template <typename _T>
 using to_variant_t = typename to_variant<_T>::type;
 
-template <typename ... _T>
+template <typename _Default, typename ... _T>
 struct first_non_void
 {
-    using type = void;
+    using type = _Default;
 };
 
-template <typename ... _T>
-struct first_non_void<void, _T...>
+template <typename _Default, typename ... _T>
+struct first_non_void<_Default, void, _T...>
 {
-    using type = typename first_non_void<_T...>::type;
+    using type = typename first_non_void<_Default, _T...>::type;
 };
 
-template <typename _T, typename ... _Us>
-struct first_non_void<_T, _Us...>
+template <typename _Default, typename _T, typename ... _Us>
+struct first_non_void<_Default, _T, _Us...>
 {
     using type = _T;
 };
 
-template<typename ... T>
-using first_non_void_t = typename first_non_void<T...>::type;
+template<typename _Default, typename ... T>
+using first_non_void_t = typename first_non_void<_Default, T...>::type;
 
 template <typename _T, typename _Tuple>
 struct index;
