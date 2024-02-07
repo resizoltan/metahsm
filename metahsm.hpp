@@ -4,6 +4,7 @@
 #include <tuple>
 #include <variant>
 #include <functional>
+#include <trace.hpp>
 
 #include "type_traits.hpp"
 
@@ -71,7 +72,9 @@ public:
     auto handle_event(const _Event& e) {
         this->target_combination_ = 0;
         if constexpr(has_reaction_to_event_v<_StateDef, _Event>) {
-            return std::make_tuple(this->react(e), this->target_combination_);
+            const auto result = std::make_tuple(this->react(e), this->target_combination_);
+            trace_react<_StateDef>(result);
+            return result;
         }
         else {
             return std::make_tuple(false, (std::size_t)0);
@@ -126,6 +129,7 @@ public:
     StateWrapper(_StateMixin& state)
     : state_{state}
     {
+        trace_enter<StateDef>();
         if constexpr (has_entry_action_v<StateDef>) {
             state_.on_entry();
         }
@@ -133,6 +137,7 @@ public:
 
     ~StateWrapper()
     {
+        trace_exit<StateDef>();
         if constexpr (has_exit_action_v<StateDef>) {
             state_.on_exit();
         }
@@ -225,7 +230,7 @@ class OrthogonalStateWrapper : public StateWrapper<_StateMixin>
 {
 public:
     using typename StateWrapper<_StateMixin>::StateDef;
-    using Regions = reverse_tuple_t<typename StateDef::Regions>;
+    using Regions = typename StateDef::Regions;
     using RegionMixins = mixins_t<Regions>;
 
     OrthogonalStateWrapper(_StateMixin& state, std::size_t target_combination)

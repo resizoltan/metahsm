@@ -41,24 +41,6 @@ struct as_ref_tuple<std::tuple<T...>>
 template <typename T>
 using as_ref_tuple_t = typename as_ref_tuple<T>::type;
 
-template <typename _Tuple>
-struct reverse_tuple;
-
-template <typename _First, typename ... _Rest>
-struct reverse_tuple<std::tuple<_First, _Rest...>>
-{
-    using type = tuple_join_t<typename reverse_tuple<std::tuple<_Rest...>>::type, _First>;
-};
-
-template <typename _Last>
-struct reverse_tuple<std::tuple<_Last>>
-{
-    using type = std::tuple<_Last>;
-};
-
-template <typename _Tuple>
-using reverse_tuple_t = typename reverse_tuple<_Tuple>::type;
-
 template <typename _T>
 struct to_variant;
 
@@ -110,5 +92,18 @@ constexpr std::size_t index_v = index<_T, _Tuple>::value;
 
 template<class... Ts> struct overload : Ts... { using Ts::operator()...; };
 template<class... Ts> overload(Ts...) -> overload<Ts...>;
+
+template <template <typename> typename _F, typename _Tuple>
+struct tuple_apply;
+
+template <template <typename> typename _F, typename ... _T>
+struct tuple_apply<_F, std::tuple<_T...>>
+{
+    using type = std::tuple<_F<_T>...>;
+};
+
+template <template <typename> typename _F, typename _Tuple>
+using tuple_apply_t = typename tuple_apply<_F, _Tuple>::type;
+
 
 }
