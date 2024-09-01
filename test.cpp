@@ -23,17 +23,34 @@ struct MyTopState : public TopState<MyTopState> {
                 transition<State2>();
                 return true;
             }
+
+            struct State11 : public State<State11> {
+                auto react(Event1 event) {
+                    transition<State12>();
+                    return true;
+                }
+            };
+
+            struct State12 : public State<State12> {
+                auto react(Event1 event) {
+                    transition<State2>();
+                    return true;
+                }
+            };
+
+            using SubStates = std::tuple<State11, State12>;
+            using Initial = State11;
         };
 
         struct State2 : public State<State2> {
             auto react(Event1 event) {
                 //context<State1>().i = 0;
-                transition<State1>();
+                transition<History<State1>>();
                 return true;
             }
         };
         using SubStates = std::tuple<State1, State2>;
-        using Initial = State2;
+        using Initial = State1;
     };
     struct Region1 : public State<Region1> {
         int i;
@@ -62,6 +79,7 @@ void ass() {
 StateMachine<MyTopState> state_machine;
 int main(int argc, char *argv[]) {
     ass<super_state_t<MyTopState>, RootState>();
+    static_assert(state_combination_v<MyTopState::Region0::State2> == 16);
     state_machine.dispatch(Event1{}); 
     state_machine.dispatch(Event1{}); 
     state_machine.dispatch(Event1{}); 

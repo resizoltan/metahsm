@@ -2,6 +2,7 @@
 #include <type_traits>
 #include <tuple>
 #include <variant>
+#include <iostream>
 
 #include "type_algorithms.hpp"
 
@@ -62,6 +63,9 @@ constexpr bool is_top_state_v = std::is_base_of_v<TopStateBase, _Entity>;
 
 template <typename _Entity>
 constexpr bool is_root_state_v = std::is_same_v<_Entity, RootState>;
+
+template <typename _Entity>
+constexpr bool is_simple_state_v = std::is_base_of_v<SimpleStateBase, _Entity>;
 
 template <typename _Entity>
 using base_t = std::conditional_t<
@@ -234,12 +238,20 @@ struct default_initial_state<_StateDef, OrthogonalStateBase>
 template <typename _StateDef>
 using initial_state_t = typename initial_state<_StateDef>::type;
 
-template <typename ... _SubStateDef>
-std::size_t compute_direct_substate(std::size_t target_combination, type_identity<std::tuple<_SubStateDef...>>) {
+template <typename _StateDef, typename ... _SubStateDef>
+std::size_t compute_direct_substate(std::size_t current_local, std::size_t initial, std::size_t shallow, std::size_t deep, type_identity<std::tuple<_SubStateDef...>>) {
     std::size_t substate_local_id = 0;
-    (static_cast<bool>(substate_local_id++, state_combination_recursive_v<_SubStateDef> & target_combination) || ...)
+    ((std::cout<< state_combination_v<_SubStateDef> << std::endl), ...);
+    (static_cast<bool>(substate_local_id++, state_combination_recursive_v<_SubStateDef> & (initial | shallow | deep)) || ...)
         || (substate_local_id++, true);
-    return substate_local_id - 1;
+    substate_local_id--;
+        
+    if (substate_local_id == sizeof...(_SubStateDef) && state_combination_v<_StateDef> & (shallow | deep)) {
+        return current_local;
+    }
+    else {
+        return substate_local_id;
+    }
 }
 
 template <typename _StateDef>
@@ -293,14 +305,22 @@ struct mixins<std::tuple<_StateDef...>>
 template <typename _StateDefs>
 using mixins_t = typename mixins<_StateDefs>::type;
 
-auto operator+(std::tuple<bool, std::size_t> lhs, std::tuple<bool, std::size_t> rhs) {
-    return std::make_tuple(std::get<0>(lhs) || std::get<0>(rhs), std::get<1>(lhs) | std::get<1>(rhs));
-}
-
 template <typename ... _StateDef>
-void remove_conflicting(std::size_t& target_combination, type_identity<std::tuple<_StateDef...>>) {
+void remove_conflicting(std::size_t& initial, std::size_t& shallow, std::size_t& deep, type_identity<std::tuple<_StateDef...>>) {
     bool already_matched = false;
-    ((already_matched ? target_combination &= ~state_combination_recursive_v<_StateDef> : (already_matched = target_combination & state_combination_recursive_v<_StateDef>)), ...);
+    auto do_remove = [&](std::size_t target){
+        ((
+            already_matched ? (
+                initial &= ~state_combination_recursive_v<_StateDef>,
+                shallow &= ~state_combination_recursive_v<_StateDef>,
+                deep &= ~state_combination_recursive_v<_StateDef>
+            )
+            : (
+                already_matched = target & state_combination_recursive_v<_StateDef>
+            )
+        ), ...);
+    };
+    do_remove(initial | shallow | deep);
 }
 
 }
