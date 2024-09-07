@@ -64,6 +64,7 @@ struct MyTopState : public TopState<MyTopState> {
             int i = 0;
             auto react(Event1 event) {
                 if(i==1) return false;
+                transition<Region0::State1>();
                 return true;
             }
         };
@@ -78,8 +79,8 @@ void ass() {
 }
 StateMachine<MyTopState> state_machine;
 int main(int argc, char *argv[]) {
-    ass<super_state_t<MyTopState>, RootState>();
-    static_assert(state_combination_v<MyTopState::Region0::State2> == 16);
+    ass<super_state_direct_t<MyTopState>, RootState>();
+    static_assert(state_combination_v<MyTopState::Region0::State1::State11> == 32);
     state_machine.dispatch(Event1{}); 
     state_machine.dispatch(Event1{}); 
     state_machine.dispatch(Event1{}); 

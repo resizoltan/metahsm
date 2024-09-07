@@ -151,8 +151,21 @@ using contained_states_recursive_t = typename contained_states<_StateDef, base_t
 template <typename _StateDef>
 using all_states_t = tuple_join_t<_StateDef, contained_states_recursive_t<_StateDef>>;
 
+
 template <typename _StateDef>
-constexpr std::size_t state_id_v = index_v<_StateDef, all_states_t<typename _StateDef::TopStateDef>>;
+struct state_id
+{
+    static constexpr std::size_t value = index_v<_StateDef, all_states_t<typename _StateDef::TopStateDef>>;
+};
+
+template <>
+struct state_id<RootState>
+{
+    static constexpr std::size_t value = 0;
+};
+
+template <typename _StateDef>
+constexpr std::size_t state_id_v = state_id<_StateDef>::value;
 
 template <typename _StateDef>
 struct state_combination
@@ -187,17 +200,27 @@ struct super_state;
 template <typename _StateDef, typename ... _OtherStateDef>
 struct super_state<_StateDef, std::tuple<_OtherStateDef...>>
 {
-    using type = first_non_void_t<
+    using direct = first_non_void_t<
         RootState,
         std::conditional_t<
             static_cast<bool>(state_combination_v<contained_states_direct_t<_OtherStateDef>> & state_combination_v<_StateDef>),
             _OtherStateDef,
             void>...
         >;
+    using recursive = tuple_join_t<direct, typename super_state<direct, std::tuple<_OtherStateDef...>>::recursive>;
+};
+
+template <typename ... _OtherStateDef>
+struct super_state<RootState, std::tuple<_OtherStateDef...>>
+{
+    using recursive = std::tuple<>; 
 };
 
 template <typename _StateDef>
-using super_state_t  = typename super_state<_StateDef, all_states_t<typename _StateDef::TopStateDef>>::type;
+using super_state_direct_t  = typename super_state<_StateDef, all_states_t<typename _StateDef::TopStateDef>>::direct;
+
+template <typename _StateDef>
+using super_state_recursive_t  = typename super_state<_StateDef, all_states_t<typename _StateDef::TopStateDef>>::recursive;
 
 template <typename _StateDef, typename _StateBase = base_t<_StateDef>>
 struct default_initial_state;
@@ -238,20 +261,39 @@ struct default_initial_state<_StateDef, OrthogonalStateBase>
 template <typename _StateDef>
 using initial_state_t = typename initial_state<_StateDef>::type;
 
+template <typename _StateDef, typename _StateBase = base_t<_StateDef>>
+struct initial_state_combination;
+
+template <typename _StateDef>
+using initial_state_combination_t = typename initial_state_combination<_StateDef>::type;
+
+template <typename _StateDef>
+constexpr std::size_t initial_state_combination_v = state_combination_v<initial_state_combination_t<_StateDef>>;
+
+template <typename _StateDef>
+struct initial_state_combination<_StateDef, SimpleStateBase>
+{
+    using type = std::tuple<>;
+};
+
+template <typename _StateDef>
+struct initial_state_combination<_StateDef, CompositeStateBase>
+{
+    using type = tuple_join_t<initial_state_t<_StateDef>, initial_state_combination_t<initial_state_t<_StateDef>>>; 
+};
+
+template <typename _StateDef>
+struct initial_state_combination<_StateDef, OrthogonalStateBase>
+{
+    using type = tuple_apply_t<initial_state_combination_t, contained_states_direct_t<_StateDef>>; 
+};
+
 template <typename _StateDef, typename ... _SubStateDef>
-std::size_t compute_direct_substate(std::size_t current_local, std::size_t initial, std::size_t shallow, std::size_t deep, type_identity<std::tuple<_SubStateDef...>>) {
+std::size_t compute_direct_substate(std::size_t current_local, std::size_t target, type_identity<std::tuple<_SubStateDef...>>) {
     std::size_t substate_local_id = 0;
-    ((std::cout<< state_combination_v<_SubStateDef> << std::endl), ...);
-    (static_cast<bool>(substate_local_id++, state_combination_recursive_v<_SubStateDef> & (initial | shallow | deep)) || ...)
+    (static_cast<bool>(substate_local_id++, state_combination_recursive_v<_SubStateDef> & target) || ...)
         || (substate_local_id++, true);
-    substate_local_id--;
-        
-    if (substate_local_id == sizeof...(_SubStateDef) && state_combination_v<_StateDef> & (shallow | deep)) {
-        return current_local;
-    }
-    else {
-        return substate_local_id;
-    }
+    return substate_local_id - 1;
 }
 
 template <typename _StateDef>
@@ -305,22 +347,26 @@ struct mixins<std::tuple<_StateDef...>>
 template <typename _StateDefs>
 using mixins_t = typename mixins<_StateDefs>::type;
 
-template <typename ... _StateDef>
-void remove_conflicting(std::size_t& initial, std::size_t& shallow, std::size_t& deep, type_identity<std::tuple<_StateDef...>>) {
-    bool already_matched = false;
-    auto do_remove = [&](std::size_t target){
-        ((
-            already_matched ? (
-                initial &= ~state_combination_recursive_v<_StateDef>,
-                shallow &= ~state_combination_recursive_v<_StateDef>,
-                deep &= ~state_combination_recursive_v<_StateDef>
-            )
-            : (
-                already_matched = target & state_combination_recursive_v<_StateDef>
-            )
-        ), ...);
+template <typename _TopState>
+bool is_legal_state_combination(std::size_t state_combination) {
+    auto is_legal_for_state = [&](auto state_identity) {
+        using StateDef = typename decltype(state_identity)::type;
+        if constexpr(has_substates_v<StateDef>) {
+            int number_of_contained_branches = 0;
+            auto contains_branch = [&](auto ... branch_identity) {
+                number_of_contained_branches = (((state_combination_v<typename decltype(branch_identity)::type> & state_combination) ? 1 : 0) + ...);
+            };
+            std::apply(contains_branch, type_identity_tuple<contained_states_direct_t<StateDef>>{});
+            if(number_of_contained_branches > 1) {
+                return false;
+            }
+        }
+        return true;
     };
-    do_remove(initial | shallow | deep);
+    auto is_legal_for_states = [&] (auto ... state_identity) {
+        return (is_legal_for_state(state_identity) & ...);
+    };
+    return std::apply(is_legal_for_states, type_identity_tuple<all_states_t<_TopState>>{});
 }
 
 }

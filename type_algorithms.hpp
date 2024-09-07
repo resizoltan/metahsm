@@ -8,6 +8,19 @@ namespace metahsm {
 template <typename T>
 struct type_identity{ using type = T; };
 
+template <typename T>
+struct type_identity_tuple_
+{};
+
+template <typename ... T>
+struct type_identity_tuple_<std::tuple<T...>>
+{
+    using type = std::tuple<type_identity<T>...>;
+};
+
+template <typename T>
+using type_identity_tuple = typename type_identity_tuple_<T>::type;
+
 template <typename>
 struct is_tuple: std::false_type {};
 

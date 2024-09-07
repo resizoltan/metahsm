@@ -73,24 +73,22 @@ struct History : public HistoryBase<type>
 template <typename _TopStateDef>
 class StateMachine;
 
+template <typename _TopState>
 struct ReactionResult
 {
     bool reacted{false};
-    std::size_t target_combination_initial{0};
-    std::size_t target_combination_shallow{0};
-    std::size_t target_combination_deep{0};
+    std::size_t target_combination{0};
 };
 
-auto operator+(ReactionResult lhs, ReactionResult rhs) {
-    return ReactionResult{
-        lhs.reacted || rhs.reacted,
-        lhs.target_combination_initial | rhs.target_combination_initial,
-        lhs.target_combination_shallow | rhs.target_combination_shallow,
-        lhs.target_combination_deep | rhs.target_combination_deep};
+template <typename _TopState>
+auto operator,(ReactionResult<_TopState> lhs, ReactionResult<_TopState> rhs) {
+    std::size_t combined_target_combination = is_legal_state_combination<_TopState>(lhs.target_combination | rhs.target_combination) ?
+        lhs.target_combination | rhs.target_combination : lhs.target_combination;
+    return ReactionResult<_TopState>{lhs.reacted || rhs.reacted, combined_target_combination};
 }
 
 template <typename _StateDef>
-void trace_react(ReactionResult result);
+void trace_react(ReactionResult<typename _StateDef::TopStateDef> result);
 
 template <typename _StateDef>
 void trace_enter();
@@ -104,12 +102,11 @@ class StateMixin : public _StateDef
 public:
     using StateDef = _StateDef;
     using TopStateDef = decltype(_StateDef::top_state_def());
-    using SuperStateDef = super_state_t<_StateDef>;
-    using SuperStateMixin = StateMixin<SuperStateDef>;
     using ContainedStates = mixins_t<contained_states_direct_t<_StateDef>>;
+    using StateMachine = StateMachine<TopStateDef>;
 
-    StateMixin(SuperStateMixin& super_state_mixin)
-    : StateMixin(super_state_mixin, std::make_index_sequence<std::tuple_size_v<ContainedStates>>())
+    StateMixin(StateMachine& state_machine)
+    : state_machine_{state_machine}
     {}
 
     template <typename _Event>
@@ -127,42 +124,41 @@ public:
 
     template <typename _ContextDef>
     auto& context() {
-        if constexpr(std::is_same_v<_ContextDef, _StateDef>) {
-            return *this;
-        }
-        else {
-            return super_state_mixin_.template context<_ContextDef>();
-        }
+
+
     }
 
     template <typename _TargetStateDef>
     void set_transition() {
         if constexpr(std::is_base_of_v<HistoryBase<DEEP>, _TargetStateDef>) {
-            reaction_result_.target_combination_deep = state_combination_v<typename _TargetStateDef::TargetStateDef>;
+            reaction_result_.target_combination = state_machine_.template get_deep_history<typename _TargetStateDef::TargetStateDef>()
+                | state_combination_v<typename _TargetStateDef::TargetStateDef>
+                | state_combination_v<super_state_recursive_t<typename _TargetStateDef::TargetStateDef>>;
         }
         else if constexpr(std::is_base_of_v<HistoryBase<SHALLOW>, _TargetStateDef>) {
-            reaction_result_.target_combination_shallow = state_combination_v<typename _TargetStateDef::TargetStateDef>;
+            reaction_result_.target_combination = state_machine_.template get_shallow_history<typename _TargetStateDef::TargetStateDef>()
+                | state_combination_v<typename _TargetStateDef::TargetStateDef>
+                | state_combination_v<super_state_recursive_t<typename _TargetStateDef::TargetStateDef>>;
         }
         else {
-            reaction_result_.target_combination_initial = state_combination_v<_TargetStateDef>;
+            reaction_result_.target_combination = initial_state_combination_v<_TargetStateDef>
+                | state_combination_v<_TargetStateDef>
+                | state_combination_v<super_state_recursive_t<_TargetStateDef>>;
         }
     }
 
-    template <typename _ContainedState>
-    StateMixin<_ContainedState>& get_contained_state() {
-        return std::get<StateMixin<_ContainedState>>(contained_states_);
+    void set_current_state_combination(std::size_t state_combination) {
+        current_state_combination_ = state_combination;
+    }
+
+    std::size_t get_current_state_combination() {
+        return current_state_combination_;
     }
 
 protected:
-    template <std::size_t ... i>
-    StateMixin(SuperStateMixin& super_state_mixin, std::index_sequence<i...>)
-    : super_state_mixin_{super_state_mixin},
-      contained_states_{(i, *this)...}
-    {}
-
-    SuperStateMixin& super_state_mixin_;
-    ContainedStates contained_states_;
-    ReactionResult reaction_result_;
+    StateMachine& state_machine_;
+    ReactionResult<TopStateDef> reaction_result_;
+    std::size_t current_state_combination_;
 };
 
 
@@ -178,9 +174,12 @@ template <typename _StateMixin>
 class StateWrapper {
 public:
     using StateDef = typename _StateMixin::StateDef;
+    using TopStateDef = typename _StateMixin::TopStateDef;
+    using StateMachine = StateMachine<TopStateDef>;
 
-    StateWrapper(_StateMixin& state)
-    : state_{state}
+    StateWrapper(_StateMixin& state, StateMachine& state_machine)
+    : state_{state},
+      state_machine_{state_machine}
     {
         trace_enter<StateDef>();
         if constexpr (has_entry_action_v<StateDef>) {
@@ -200,13 +199,17 @@ public:
     }
 
     StateWrapper(StateWrapper&& other)
-    : state_{other.state_}
+    : state_{other.state_},
+      state_machine_{other.state_machine_}
     {
         other.moved_from = true;
     }
 
+    
+
 protected:
     _StateMixin& state_;
+    StateMachine& state_machine_;
     bool moved_from{false};
 };
 
@@ -214,16 +217,26 @@ template <typename _StateMixin>
 class SimpleStateWrapper : public StateWrapper<_StateMixin>
 {
 public:
-    SimpleStateWrapper(_StateMixin& state, std::size_t initial, std::size_t shallow, std::size_t deep)
-    : StateWrapper<_StateMixin>(state)
-    {}
+    using typename StateWrapper<_StateMixin>::StateDef;
+    using typename StateWrapper<_StateMixin>::TopStateDef;
+    using typename StateWrapper<_StateMixin>::StateMachine;
+
+    SimpleStateWrapper(_StateMixin& state, std::size_t target, StateMachine& state_machine)
+    : StateWrapper<_StateMixin>(state, state_machine)
+    {
+        this->state_.set_current_state_combination(get_current_state_combination());    
+    }
 
     template <typename _Event>
     auto handle_event(const _Event& e) {
         return this->state_.handle_event(e);
     }
 
-    void execute_transition(std::size_t, std::size_t, std::size_t) { }
+    void execute_transition(std::size_t) { }
+
+    std::size_t get_current_state_combination() {
+        return state_combination_v<StateDef>;
+    }
 };
 
 template <typename _StateMixin>
@@ -231,30 +244,30 @@ class CompositeStateWrapper : public StateWrapper<_StateMixin>
 {
 public:
     using typename StateWrapper<_StateMixin>::StateDef;
+    using typename StateWrapper<_StateMixin>::TopStateDef;
+    using typename StateWrapper<_StateMixin>::StateMachine;
     using SubStates = typename StateDef::SubStates;
     using SubStateMixins = mixins_t<SubStates>;
 
-    CompositeStateWrapper(_StateMixin& state, std::size_t initial, std::size_t shallow, std::size_t deep)
-    : StateWrapper<_StateMixin>(state)
+    CompositeStateWrapper(_StateMixin& state, std::size_t target, StateMachine& state_machine)
+    : StateWrapper<_StateMixin>(state, state_machine)
     {
-        std::size_t target = initial | shallow | deep;
-        std::size_t substate_to_enter_local_id = compute_direct_substate<typename _StateMixin::StateDef>(active_state_local_id_, initial, shallow, deep, type_identity<SubStates>{});
-        std::invoke(lookup_table[substate_to_enter_local_id], this, initial, shallow, deep);
+        std::size_t substate_to_enter_local_id = compute_direct_substate<typename _StateMixin::StateDef>(active_state_local_id_, target, type_identity<SubStates>{});
+        std::invoke(lookup_table[substate_to_enter_local_id], this, target);
+        this->state_.set_current_state_combination(get_current_state_combination());
     }
 
     template <typename _Event>
     auto handle_event(const _Event& e) {
         auto do_handle_event = overload{
             [&](auto& active_sub_state){ return active_sub_state.handle_event(e); },
-            [](std::monostate){ return ReactionResult{}; }
+            [](std::monostate){ return ReactionResult<TopStateDef>{}; }
         };
         auto reaction_result = std::visit(do_handle_event, active_sub_state_);
         return reaction_result.reacted ? reaction_result : this->state_.handle_event(e);
     }
 
-    void execute_transition(std::size_t initial, std::size_t shallow, std::size_t deep) {
-        remove_conflicting(initial, shallow, deep, type_identity<SubStates>{});
-        std::size_t target = initial | shallow | deep;
+    void execute_transition(std::size_t target) {
         bool is_target_in_context = (
             static_cast<bool>((target & (1 << active_state_id_)))
         )
@@ -264,15 +277,23 @@ public:
 
         if(is_target_in_context) {
             auto do_execute_transition = overload{
-                [&](auto& active_sub_state){ active_sub_state.execute_transition(initial, shallow, deep); },
+                [&](auto& active_sub_state){ active_sub_state.execute_transition(target); },
                 [](std::monostate) { }
             };
             std::visit(do_execute_transition, active_sub_state_); 
         }
         else {
-            std::size_t substate_to_enter_local_id = compute_direct_substate<typename _StateMixin::StateDef>(active_state_local_id_, initial, shallow, deep, type_identity<SubStates>{});
-            std::invoke(lookup_table[substate_to_enter_local_id], this, initial, shallow, deep);
+            std::size_t substate_to_enter_local_id = compute_direct_substate<typename _StateMixin::StateDef>(active_state_local_id_, target, type_identity<SubStates>{});
+            std::invoke(lookup_table[substate_to_enter_local_id], this, target);
         }
+    }
+
+    std::size_t get_current_state_combination() {
+        auto do_get_state_combination = overload{
+            [&](auto& active_substate) { return active_substate.get_current_state_combination(); },
+            [](std::monostate){ return std::size_t{0}; }
+        };
+        return std::visit(do_get_state_combination, active_sub_state_) | state_combination_v<StateDef>;
     }
 
 private:
@@ -282,18 +303,19 @@ private:
     }
 
     template <typename _DirectSubStateToEnter>
-    void enter_substate(std::size_t initial, std::size_t shallow, std::size_t deep){
+    void enter_substate(std::size_t target){
         using T = wrapper_t<StateMixin<_DirectSubStateToEnter>>;
-        active_sub_state_.template emplace<T>(this->state_.template get_contained_state<_DirectSubStateToEnter>(), initial, shallow, deep);
+        active_sub_state_.template emplace<T>(this->state_machine_.template get_state<_DirectSubStateToEnter>(), target, this->state_machine_);
         active_state_id_ = state_id_v<_DirectSubStateToEnter>;
         active_state_local_id_ = index_v<_DirectSubStateToEnter, SubStates>;
+        this->state_.set_current_state_combination(get_current_state_combination());
     }
 
     to_variant_t<tuple_join_t<std::monostate, wrappers_t<SubStateMixins>>> active_sub_state_;
     std::size_t active_state_id_ = state_id_v<initial_state_t<StateDef>>;
     std::size_t active_state_local_id_ = index_v<initial_state_t<StateDef>, SubStates>;
     static constexpr std::size_t initial_state_id_ = state_id_v<initial_state_t<StateDef>>;
-    static constexpr std::array<void(CompositeStateWrapper<StateMixin<StateDef>>::*)(std::size_t, std::size_t, std::size_t), std::tuple_size_v<SubStates> + 1> lookup_table = init_lookup_table(type_identity<SubStates>{});
+    static constexpr std::array<void(CompositeStateWrapper<StateMixin<StateDef>>::*)(std::size_t), std::tuple_size_v<SubStates> + 1> lookup_table = init_lookup_table(type_identity<SubStates>{});
 };
 
 template <typename _StateMixin>
@@ -301,31 +323,40 @@ class OrthogonalStateWrapper : public StateWrapper<_StateMixin>
 {
 public:
     using typename StateWrapper<_StateMixin>::StateDef;
+    using typename StateWrapper<_StateMixin>::TopStateDef;
+    using typename StateWrapper<_StateMixin>::StateMachine;
     using Regions = typename StateDef::Regions;
     using RegionMixins = mixins_t<Regions>;
 
-    OrthogonalStateWrapper(_StateMixin& state, std::size_t initial, std::size_t shallow, std::size_t deep)
-    : OrthogonalStateWrapper<_StateMixin>(state, initial, shallow, deep, type_identity<Regions>{})
+    OrthogonalStateWrapper(_StateMixin& state, std::size_t target, StateMachine& state_machine)
+    : OrthogonalStateWrapper<_StateMixin>(state, target, type_identity<Regions>{}, state_machine)
     {}
 
     template <typename _Event>
     auto handle_event(const _Event& e) {
-        auto do_handle_event = [&](auto& ... region){ return (region.handle_event(e) + ...); };
+        auto do_handle_event = [&](auto& ... region){ return (region.handle_event(e), ...); };
         auto reaction_result = std::apply(do_handle_event, regions_);
         return reaction_result.reacted ? reaction_result : this->state_.handle_event(e);
     }
 
-    void execute_transition(std::size_t initial, std::size_t shallow, std::size_t deep) {
-        auto do_execute_transition = [&](auto& ... region){ (region.execute_transition(initial, shallow, deep), ...); };
+    void execute_transition(std::size_t target) {
+        auto do_execute_transition = [&](auto& ... region){ (region.execute_transition(target), ...); };
         std::apply(do_execute_transition, regions_);
+    }
+
+    std::size_t get_current_state_combination() {
+        auto do_get_state_combination = [&](auto& ... region) { return (region.get_current_state_combination() | ...); };
+        return std::apply(do_get_state_combination, regions_) | state_combination_v<StateDef>;
     }
 
 private:
     template <typename ... RegionDef>
-    OrthogonalStateWrapper(_StateMixin& state, std::size_t initial, std::size_t shallow, std::size_t deep, type_identity<std::tuple<RegionDef...>>)
-    : StateWrapper<_StateMixin>(state),
-      regions_{std::move(wrapper_t<StateMixin<RegionDef>>{state.template get_contained_state<RegionDef>(), initial, shallow, deep})...} 
-    {}
+    OrthogonalStateWrapper(_StateMixin& state, std::size_t target, type_identity<std::tuple<RegionDef...>>, StateMachine& state_machine)
+    : StateWrapper<_StateMixin>(state, state_machine),
+      regions_{std::move(wrapper_t<StateMixin<RegionDef>>{state_machine.template get_state<RegionDef>(), target, this->state_machine_})...} 
+    {
+        this->state_.set_current_state_combination(get_current_state_combination());
+    }
 
     wrappers_t<RegionMixins> regions_;
 };
@@ -339,30 +370,59 @@ class StateMachine
 {
 public:
     StateMachine()
-    : top_state_{root_state_mixin_},
-      active_state_configuration_{top_state_, state_combination_v<initial_state_t<_TopStateDef>>, 0, 0}
+    : StateMachine(std::make_index_sequence<std::tuple_size_v<all_states_t<_TopStateDef>>>{})
     {}
 
     template <typename _Event>
     bool dispatch(const _Event& event) {
         auto reaction_result = active_state_configuration_.handle_event(event);
-        if(reaction_result.reacted
-            && (reaction_result.target_combination_initial
-              | reaction_result.target_combination_shallow
-              | reaction_result.target_combination_deep
-            ) != 0
+        if(reaction_result.reacted && reaction_result.target_combination != 0
         ) {
-            active_state_configuration_.execute_transition(
-                reaction_result.target_combination_initial,
-                reaction_result.target_combination_shallow,
-                reaction_result.target_combination_deep);
+            active_state_configuration_.execute_transition(reaction_result.target_combination);
+            active_state_combination_ = active_state_configuration_.get_current_state_combination();
         }
         return reaction_result.reacted;
     }
 
+    std::size_t get_active_state_combination() {
+        return active_state_combination_;
+    }
+
+    template <typename _StateDef>
+    StateMixin<_StateDef>& get_state() {
+        return std::get<StateMixin<_StateDef>>(all_states_);
+    }
+
+    template <typename _StateDef>
+    std::size_t get_shallow_history() {
+        if constexpr(has_substates_v<_StateDef> || has_regions_v<_StateDef>) {
+            return std::get<StateMixin<_StateDef>>(all_states_).get_current_state_combination() & state_combination_v<contained_states_direct_t<_StateDef>>;
+        }
+        else {
+            return state_combination_v<_StateDef>;
+        }
+    }
+
+    template <typename _StateDef>
+    std::size_t get_deep_history() {
+        if constexpr(has_substates_v<_StateDef> || has_regions_v<_StateDef>) {
+            return std::get<StateMixin<_StateDef>>(all_states_).get_current_state_combination() & state_combination_recursive_v<contained_states_direct_t<_StateDef>>;
+        }
+        else {
+            return state_combination_v<_StateDef>;
+        }
+    }
+
 private:
-    StateMixin<_TopStateDef> top_state_;
+    template <auto ... I>
+    StateMachine(std::index_sequence<I...>)
+    : all_states_{std::move(std::tuple_element_t<I, decltype(all_states_)>{*this})...},
+      active_state_configuration_{std::get<0>(all_states_), state_combination_v<initial_state_t<_TopStateDef>>, *this}
+    {}
+
+    tuple_apply_t<StateMixin, all_states_t<_TopStateDef>> all_states_;
     wrapper_t<StateMixin<_TopStateDef>> active_state_configuration_;
+    std::size_t active_state_combination_;
     StateMixin<RootState> root_state_mixin_;
 };
 

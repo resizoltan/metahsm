@@ -23,40 +23,19 @@ const std::array<std::string, std::tuple_size_v<all_states_t<_TopStateDef>>> sta
 }, tuple_apply_t<type_identity, all_states_t<_TopStateDef>>{});
 
 template <typename _StateDef>
-void trace_react(ReactionResult result) {
+void trace_react(ReactionResult<typename _StateDef::TopStateDef> result) {
     std::string did_react = result.reacted ? "true" : "false";
-    std::size_t initial = result.target_combination_initial;
-    std::size_t shallow = result.target_combination_shallow;
-    std::size_t deep = result.target_combination_deep;
+    std::size_t target = result.target_combination;
     std::cout << get_type_name<_StateDef>() << "::react: "  << did_react;
-    if(initial != 0) {
+    if(target != 0) {
         std::cout << ", target: ";
-        for(std::size_t state_id = 1; ; state_id++) {
-            if(static_cast<bool>((1 << state_id) & initial)) {
-                std::cout << state_names<typename _StateDef::TopStateDef>.at(state_id);
-                break;
+        for(std::size_t state_id = 0; state_id < std::tuple_size_v<all_states_t<typename _StateDef::TopStateDef>>; state_id++) {
+            if(static_cast<bool>((1 << state_id) & target)) {
+                std::cout << state_names<typename _StateDef::TopStateDef>.at(state_id) << ", ";
             }
         }
     }
-    if(shallow != 0) {
-        std::cout << ", target (shallow): ";
-        for(std::size_t state_id = 1; ; state_id++) {
-            if(static_cast<bool>((1 << state_id) & shallow)) {
-                std::cout << state_names<typename _StateDef::TopStateDef>.at(state_id);
-                break;
-            }
-        }
-    }
-    if(deep != 0) {
-        std::cout << ", target (deep): ";
-        for(std::size_t state_id = 1; ; state_id++) {
-            if(static_cast<bool>((1 << state_id) & deep)) {
-                std::cout << state_names<typename _StateDef::TopStateDef>.at(state_id);
-                break;
-            }
-        }
-    }
-    if((initial | shallow | deep) == 0) {
+    else {
         std::cout << ", no target";
     }
     std::cout << std::endl;
