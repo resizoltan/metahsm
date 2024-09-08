@@ -296,7 +296,7 @@ public:
 private:
     template <typename ... _SubStateDef>
     static constexpr auto init_lookup_table(type_identity<std::tuple<_SubStateDef...>>) {
-        return LookupTable{&enter_substate<_SubStateDef>..., &enter_substate<initial_state_t<StateDef>>};
+        return LookupTable{&CompositeStateWrapper<_StateMixin>::enter_substate<_SubStateDef>..., &CompositeStateWrapper<_StateMixin>::enter_substate<initial_state_t<StateDef>>};
     }
 
     template <typename _DirectSubStateToEnter>
