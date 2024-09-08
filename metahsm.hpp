@@ -247,6 +247,7 @@ public:
     using typename StateWrapper<_StateMixin>::_StateMachine;
     using SubStates = typename StateDef::SubStates;
     using SubStateMixins = mixins_t<SubStates>;
+    using LookupTable = std::array<void(CompositeStateWrapper<StateMixin<StateDef>>::*)(std::size_t), std::tuple_size_v<SubStates> + 1>;
 
     CompositeStateWrapper(_StateMixin& state, std::size_t target, _StateMachine& state_machine)
     : StateWrapper<_StateMixin>(state, state_machine)
@@ -295,7 +296,7 @@ public:
 private:
     template <typename ... _SubStateDef>
     static constexpr auto init_lookup_table(type_identity<std::tuple<_SubStateDef...>>) {
-        return std::array{&enter_substate<_SubStateDef>..., &enter_substate<initial_state_t<StateDef>>};
+        return LookupTable{&enter_substate<_SubStateDef>..., &enter_substate<initial_state_t<StateDef>>};
     }
 
     template <typename _DirectSubStateToEnter>
@@ -309,7 +310,7 @@ private:
     to_variant_t<tuple_join_t<std::monostate, wrappers_t<SubStateMixins>>> active_sub_state_;
     std::size_t active_state_id_ = state_id_v<initial_state_t<StateDef>>;
     static constexpr std::size_t initial_state_id_ = state_id_v<initial_state_t<StateDef>>;
-    static constexpr std::array<void(CompositeStateWrapper<StateMixin<StateDef>>::*)(std::size_t), std::tuple_size_v<SubStates> + 1> lookup_table = init_lookup_table(type_identity<SubStates>{});
+    static constexpr LookupTable lookup_table = init_lookup_table(type_identity<SubStates>{});
 };
 
 template <typename _StateMixin>
