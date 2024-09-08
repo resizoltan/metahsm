@@ -11,14 +11,14 @@ namespace metahsm
 
 template <typename T>
 constexpr auto get_type_name(){
-    std::string pretty_function = __PRETTY_FUNCTION__;
+    std::string_view pretty_function = __PRETTY_FUNCTION__;
     auto start = pretty_function.find("T =") + 3;
     auto length = pretty_function.substr(start).find("]");
     return pretty_function.substr(start, length);
 }
 
 template <typename _TopStateDef>
-const std::array<std::string, std::tuple_size_v<all_states_t<_TopStateDef>>> state_names = std::apply([](auto ... state) {
+const std::array<std::string_view, std::tuple_size_v<all_states_t<_TopStateDef>>> state_names = std::apply([](auto ... state) {
     return std::array{get_type_name<typename decltype(state)::type>()...};
 }, tuple_apply_t<type_identity, all_states_t<_TopStateDef>>{});
 
