@@ -3,7 +3,8 @@ project(metahsm)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED On)
 
-Include(FetchContent)
+include(FetchContent)
+include(CTest)
 
 FetchContent_Declare(
   Catch2
@@ -13,6 +14,6 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(Catch2)
 
 if(BUILD_TESTING)
-    add_executable(test test.cpp)
-    target_include_directories (test PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+    add_executable(tests test.cpp)
+    target_include_directories (tests PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 endif()
