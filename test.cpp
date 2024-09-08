@@ -19,13 +19,14 @@ struct MyTopState : public TopState<MyTopState> {
         struct State1 : public State<State1> {
             int i = 0;
             auto react(Event1) {
-                //context<Region1::State3>().i = 1;
+                context<Region1::State3>().i = 1;
                 transition<State2>();
                 return true;
             }
 
             struct State11 : public State<State11> {
                 auto react(Event1) {
+                    context<Region1::State3>().i = 1;
                     transition<State12>();
                     return true;
                 }
@@ -44,7 +45,7 @@ struct MyTopState : public TopState<MyTopState> {
 
         struct State2 : public State<State2> {
             auto react(Event1) {
-                //context<State1>().i = 0;
+                context<State1>().i = 0;
                 transition<History<State1>>();
                 return true;
             }

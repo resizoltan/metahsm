@@ -124,8 +124,7 @@ public:
 
     template <typename _ContextDef>
     auto& context() {
-
-
+        return state_machine_.template get_context<_ContextDef>();
     }
 
     template <typename _TargetStateDef>
@@ -386,6 +385,11 @@ public:
     template <typename _StateDef>
     StateMixin<_StateDef>& get_state() {
         return std::get<StateMixin<_StateDef>>(all_states_);
+    }
+
+    template <typename _ContextDef>
+    _ContextDef& get_context() {
+        return get_state<_ContextDef>();
     }
 
     template <typename _StateDef>
