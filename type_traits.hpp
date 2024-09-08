@@ -291,9 +291,9 @@ struct initial_state_combination<_StateDef, OrthogonalStateBase>
 template <typename _StateDef, typename ... _SubStateDef>
 std::size_t compute_direct_substate(std::size_t target, type_identity<std::tuple<_SubStateDef...>>) {
     std::size_t substate_local_id = 0;
-    (static_cast<bool>(substate_local_id++, state_combination_recursive_v<_SubStateDef> & target) || ...)
+    bool found = (static_cast<bool>(substate_local_id++, state_combination_recursive_v<_SubStateDef> & target) || ...)
         || (substate_local_id++, true);
-    return substate_local_id - 1;
+    return found ? substate_local_id - 1 : 0;
 }
 
 template <typename _StateDef>
