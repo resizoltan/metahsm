@@ -3,8 +3,16 @@ project(metahsm)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED On)
 
+Include(FetchContent)
+
+FetchContent_Declare(
+  Catch2
+  GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+  GIT_TAG        v3.4.0
+)
+FetchContent_MakeAvailable(Catch2)
 
 if(BUILD_TESTING)
-    add_test(test test.cpp)
+    add_executable(test test.cpp)
     target_include_directories (test PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 endif()
