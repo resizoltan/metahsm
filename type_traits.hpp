@@ -289,7 +289,7 @@ struct initial_state_combination<_StateDef, OrthogonalStateBase>
 };
 
 template <typename _StateDef, typename ... _SubStateDef>
-std::size_t compute_direct_substate(std::size_t current_local, std::size_t target, type_identity<std::tuple<_SubStateDef...>>) {
+std::size_t compute_direct_substate(std::size_t target, type_identity<std::tuple<_SubStateDef...>>) {
     std::size_t substate_local_id = 0;
     (static_cast<bool>(substate_local_id++, state_combination_recursive_v<_SubStateDef> & target) || ...)
         || (substate_local_id++, true);
@@ -364,7 +364,7 @@ bool is_legal_state_combination(std::size_t state_combination) {
         return true;
     };
     auto is_legal_for_states = [&] (auto ... state_identity) {
-        return (is_legal_for_state(state_identity) & ...);
+        return (is_legal_for_state(state_identity) && ...);
     };
     return std::apply(is_legal_for_states, type_identity_tuple<all_states_t<_TopState>>{});
 }

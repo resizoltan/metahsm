@@ -103,9 +103,9 @@ public:
     using StateDef = _StateDef;
     using TopStateDef = decltype(_StateDef::top_state_def());
     using ContainedStates = mixins_t<contained_states_direct_t<_StateDef>>;
-    using StateMachine = StateMachine<TopStateDef>;
+    using _StateMachine = StateMachine<TopStateDef>;
 
-    StateMixin(StateMachine& state_machine)
+    StateMixin(_StateMachine& state_machine)
     : state_machine_{state_machine}
     {}
 
@@ -156,7 +156,7 @@ public:
     }
 
 protected:
-    StateMachine& state_machine_;
+    _StateMachine& state_machine_;
     ReactionResult<TopStateDef> reaction_result_;
     std::size_t current_state_combination_;
 };
@@ -175,9 +175,9 @@ class StateWrapper {
 public:
     using StateDef = typename _StateMixin::StateDef;
     using TopStateDef = typename _StateMixin::TopStateDef;
-    using StateMachine = StateMachine<TopStateDef>;
+    using _StateMachine = StateMachine<TopStateDef>;
 
-    StateWrapper(_StateMixin& state, StateMachine& state_machine)
+    StateWrapper(_StateMixin& state, _StateMachine& state_machine)
     : state_{state},
       state_machine_{state_machine}
     {
@@ -209,7 +209,7 @@ public:
 
 protected:
     _StateMixin& state_;
-    StateMachine& state_machine_;
+    _StateMachine& state_machine_;
     bool moved_from{false};
 };
 
@@ -219,9 +219,9 @@ class SimpleStateWrapper : public StateWrapper<_StateMixin>
 public:
     using typename StateWrapper<_StateMixin>::StateDef;
     using typename StateWrapper<_StateMixin>::TopStateDef;
-    using typename StateWrapper<_StateMixin>::StateMachine;
+    using typename StateWrapper<_StateMixin>::_StateMachine;
 
-    SimpleStateWrapper(_StateMixin& state, std::size_t target, StateMachine& state_machine)
+    SimpleStateWrapper(_StateMixin& state, std::size_t, _StateMachine& state_machine)
     : StateWrapper<_StateMixin>(state, state_machine)
     {
         this->state_.set_current_state_combination(get_current_state_combination());    
@@ -245,14 +245,14 @@ class CompositeStateWrapper : public StateWrapper<_StateMixin>
 public:
     using typename StateWrapper<_StateMixin>::StateDef;
     using typename StateWrapper<_StateMixin>::TopStateDef;
-    using typename StateWrapper<_StateMixin>::StateMachine;
+    using typename StateWrapper<_StateMixin>::_StateMachine;
     using SubStates = typename StateDef::SubStates;
     using SubStateMixins = mixins_t<SubStates>;
 
-    CompositeStateWrapper(_StateMixin& state, std::size_t target, StateMachine& state_machine)
+    CompositeStateWrapper(_StateMixin& state, std::size_t target, _StateMachine& state_machine)
     : StateWrapper<_StateMixin>(state, state_machine)
     {
-        std::size_t substate_to_enter_local_id = compute_direct_substate<typename _StateMixin::StateDef>(active_state_local_id_, target, type_identity<SubStates>{});
+        std::size_t substate_to_enter_local_id = compute_direct_substate<typename _StateMixin::StateDef>(target, type_identity<SubStates>{});
         std::invoke(lookup_table[substate_to_enter_local_id], this, target);
         this->state_.set_current_state_combination(get_current_state_combination());
     }
@@ -268,14 +268,11 @@ public:
     }
 
     void execute_transition(std::size_t target) {
-        bool is_target_in_context = (
-            static_cast<bool>((target & (1 << active_state_id_)))
-        )
-        || (
-            !static_cast<bool>(target & state_combination_v<SubStates>) && initial_state_id_ == active_state_id_
-        );
+        if(!static_cast<bool>(target & state_combination_v<SubStates>) && initial_state_id_ == active_state_id_) {
+            return; 
+        }
 
-        if(is_target_in_context) {
+        if(static_cast<bool>(target & (1 << active_state_id_))) {
             auto do_execute_transition = overload{
                 [&](auto& active_sub_state){ active_sub_state.execute_transition(target); },
                 [](std::monostate) { }
@@ -283,7 +280,7 @@ public:
             std::visit(do_execute_transition, active_sub_state_); 
         }
         else {
-            std::size_t substate_to_enter_local_id = compute_direct_substate<typename _StateMixin::StateDef>(active_state_local_id_, target, type_identity<SubStates>{});
+            std::size_t substate_to_enter_local_id = compute_direct_substate<typename _StateMixin::StateDef>(target, type_identity<SubStates>{});
             std::invoke(lookup_table[substate_to_enter_local_id], this, target);
         }
     }
@@ -307,13 +304,11 @@ private:
         using T = wrapper_t<StateMixin<_DirectSubStateToEnter>>;
         active_sub_state_.template emplace<T>(this->state_machine_.template get_state<_DirectSubStateToEnter>(), target, this->state_machine_);
         active_state_id_ = state_id_v<_DirectSubStateToEnter>;
-        active_state_local_id_ = index_v<_DirectSubStateToEnter, SubStates>;
         this->state_.set_current_state_combination(get_current_state_combination());
     }
 
     to_variant_t<tuple_join_t<std::monostate, wrappers_t<SubStateMixins>>> active_sub_state_;
     std::size_t active_state_id_ = state_id_v<initial_state_t<StateDef>>;
-    std::size_t active_state_local_id_ = index_v<initial_state_t<StateDef>, SubStates>;
     static constexpr std::size_t initial_state_id_ = state_id_v<initial_state_t<StateDef>>;
     static constexpr std::array<void(CompositeStateWrapper<StateMixin<StateDef>>::*)(std::size_t), std::tuple_size_v<SubStates> + 1> lookup_table = init_lookup_table(type_identity<SubStates>{});
 };
@@ -324,11 +319,11 @@ class OrthogonalStateWrapper : public StateWrapper<_StateMixin>
 public:
     using typename StateWrapper<_StateMixin>::StateDef;
     using typename StateWrapper<_StateMixin>::TopStateDef;
-    using typename StateWrapper<_StateMixin>::StateMachine;
+    using typename StateWrapper<_StateMixin>::_StateMachine;
     using Regions = typename StateDef::Regions;
     using RegionMixins = mixins_t<Regions>;
 
-    OrthogonalStateWrapper(_StateMixin& state, std::size_t target, StateMachine& state_machine)
+    OrthogonalStateWrapper(_StateMixin& state, std::size_t target, _StateMachine& state_machine)
     : OrthogonalStateWrapper<_StateMixin>(state, target, type_identity<Regions>{}, state_machine)
     {}
 
@@ -351,7 +346,7 @@ public:
 
 private:
     template <typename ... RegionDef>
-    OrthogonalStateWrapper(_StateMixin& state, std::size_t target, type_identity<std::tuple<RegionDef...>>, StateMachine& state_machine)
+    OrthogonalStateWrapper(_StateMixin& state, std::size_t target, type_identity<std::tuple<RegionDef...>>, _StateMachine& state_machine)
     : StateWrapper<_StateMixin>(state, state_machine),
       regions_{std::move(wrapper_t<StateMixin<RegionDef>>{state_machine.template get_state<RegionDef>(), target, this->state_machine_})...} 
     {
