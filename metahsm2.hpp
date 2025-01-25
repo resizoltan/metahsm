@@ -36,6 +36,8 @@ protected:
 
 public:
   void react();
+  void on_entry();
+  void on_exit();
   void * target_state_combination_; // evaluation of state_combination_t needs to be deferred
 };
 }
@@ -48,11 +50,16 @@ struct StateMixin : public State_
 {
   using typename State_::TopState;
   using State_::react;
+  using State_::on_entry;
+  using State_::on_exit;
 
   template <typename Event_>
   bool react(Event_ const&) {
     return false;
   }
+
+  void on_entry() {}
+  void on_exit() {}
 };
 
 
@@ -64,29 +71,23 @@ public:
   StateWrapper(StateMixin<State_>& state)
   : state_{state}
   {
-    if constexpr (has_entry_action_v<State_>) {
-      state_.on_entry();
-    }
+    state_.on_entry();
   }
 
   ~StateWrapper()
   {
-    if constexpr (has_exit_action_v<State_>) {
-      state_.on_exit();
-    }
+    state_.on_exit();
   }
 
   template <typename Event_>
   bool handle_event(const Event_& e) {
-    //if constexpr(has_reaction_to_event_v<State_, Event_>) {
-      if constexpr(std::is_void_v<decltype(this->state_.react(e))>) {
-        this->state_.react(e);
-        return true;
-      }
-      else {
-        return this->state_.react(e);
-      }
-    //}
+    if constexpr(std::is_void_v<decltype(this->state_.react(e))>) {
+      this->state_.react(e);
+      return true;
+    }
+    else {
+      return this->state_.react(e);
+    }
     return false; 
   }
 

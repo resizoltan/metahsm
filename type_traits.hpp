@@ -77,42 +77,6 @@ using base_t = std::conditional_t<
         typename base<has_substates_v<_Entity>, has_regions_v<_Entity>>::type>, 
     void>;
 
-template <typename _StateDef, typename _Event, typename _SFINAE = void>
-struct has_reaction_to_event : std::false_type
-{};
-
-template <typename _StateDef, typename _Event>
-struct has_reaction_to_event<_StateDef, _Event, std::void_t<std::enable_if_t<std::is_invocable_v<decltype(&_StateDef::react), _StateDef&, const _Event&>>>>
-: std::true_type
-{};
-
-template <typename _StateDef, typename _Event>
-constexpr bool has_reaction_to_event_v = has_reaction_to_event<_StateDef, _Event>::value;
-
-template <typename _StateDef, typename _SFINAE = void>
-struct has_entry_action : std::false_type
-{};
-
-template <typename _StateDef>
-struct has_entry_action<_StateDef, std::void_t<std::is_invocable<decltype(&_StateDef::on_entry), _StateDef&>>>
-: std::true_type
-{};
-
-template <typename _StateDef>
-constexpr bool has_entry_action_v = has_entry_action<_StateDef>::value;
-
-template <typename _StateDef, typename _SFINAE = void>
-struct has_exit_action : std::false_type
-{};
-
-template <typename _StateDef>
-struct has_exit_action<_StateDef, std::void_t<std::is_invocable<decltype(&_StateDef::on_exit), _StateDef&>>>
-: std::true_type
-{};
-
-template <typename _StateDef>
-constexpr bool has_exit_action_v = has_exit_action<_StateDef>::value;
-
 template <typename _StateDef, typename _StateBase = void>
 struct contained_states;
 
