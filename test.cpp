@@ -54,8 +54,10 @@ void ass() {
 }
 
 template <auto ... I>
-void init(std::index_sequence<I...>) { 
-  tuple_apply_t<StateMixin, all_states_t<LifecycleTopState>> states{(I, 1)...};
+void init(std::index_sequence<I...>) {
+   StateMachine<LifecycleTopState> sm;
+
+  //tuple_apply_t<StateMixin, all_states_t<LifecycleTopState>> states{(I, 1)...};
 }
 
 int main(int , char *[]) {

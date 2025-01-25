@@ -5,7 +5,6 @@
 #include <variant>
 #include <functional>
 #include <optional>
-#include <bitset>
 
 #include "type_traits.hpp"
 
@@ -18,13 +17,8 @@ namespace metahsm {
 template <typename TopState_>
 class StateMachine;
 
-struct Result
-{
-  bool reacted;
-  std::size_t target_state_index;
-};
-
 namespace detail {
+
 template <typename TopState_>
 class State_ : public StateBase
 {
@@ -32,21 +26,21 @@ public:
   using State = State_<TopState_>;
   using TopState = TopState_;
 
+protected:
+
   template <typename TargetState_>
-  auto transition() {
+  void transition() {
       //(static_assert(is_in_context_recursive_v<_TargetStateDef, TopStateDef>),...);
-    target_state_index_ = index_v<TargetState_, all_states_t<TopState>>;
+    static_cast<state_combination_t<TopState_>*>(target_state_combination_)->set(state_id_v<TargetState_>);
   }
 
-protected:
-  std::size_t target_state_index_;
+public:
+  void * target_state_combination_; // evaluation of state_combination_t needs to be deferred
 };
 }
 
 template <typename TopState_>
 using State = detail::State_<TopState_>;
-
-
 
 template <typename State_>
 class StateMixin : public State_
@@ -59,21 +53,18 @@ public:
   : state_machine_{state_machine}
   {}*/
 
-  StateMixin(int i){}
-
   template <typename Event_>
-  Result handle_event(const Event_& e) {
+  bool handle_event(const Event_& e) {
     if constexpr(has_reaction_to_event_v<State_, Event_>) {
-      Result result{this->react(e), this->target_state_index_};
-      this->target_state_index_ = 0;
-      return result;
+      return this->react(e);
     }
-    return {false, 0};
+    return false;
   }
 
 protected:
   //StateMachine& state_machine_;
 };
+
 
 template <typename State_>
 class StateWrapper {
@@ -95,8 +86,13 @@ public:
     }
   }
 
+  template <typename Event_>
+  bool handle_event(const Event_& e) {
+    return this->state_.handle_event(e);
+  }
+
 protected:
-  StateMixin<State_>& state_;
+  StateMixin<State_> & state_;
 };
 
 template <typename State_>
@@ -108,11 +104,6 @@ public:
   SimpleStateWrapper(StateMixin<State_>& state, StateMachine&)
   : StateWrapper<State_>(state)
   { }
-
-  template <typename Event_>
-  auto handle_event(const Event_& e) {
-    return this->state_.handle_event(e);
-  }
 };
 
 template <typename State_>
@@ -128,7 +119,8 @@ public:
   : StateWrapper<State_>(state),
     state_machine_{state_machine},
     active_sub_state_{std::in_place_type<wrapper_t<initial_state_t<State_>>>,
-      state_machine.template get<initial_state_t<State_>>(), state_machine_}
+      state_machine.template get_state<initial_state_t<State_>>(),
+      state_machine_}
   { }
 
   template <typename Event_>
@@ -137,7 +129,7 @@ public:
       return active_sub_state.handle_event(e); 
     };
     auto reacted = std::visit(do_handle_event, active_sub_state_);
-    return reacted | this->state_.handle_event(e);
+    return reacted | this->StateWrapper<State_>::handle_event(e);
   }
 
 private:  
@@ -159,30 +151,40 @@ public:
   static constexpr std::size_t N = std::tuple_size_v<States>;
 
   StateMachine()
-  : StateMachine(std::index_sequence<std::tuple_size_v<States>>())
-  {}
+  : active_state_configuration_{std::get<StateMixin<TopState_>>(all_states_), *this}
+  {
+    init(std::index_sequence_for<States>());
+  }
+
+  // TODO copy, move ctor
 
   template <typename Event_>
   bool dispatch(const Event_& event) {
     bool reacted = active_state_configuration_.handle_event(event);
-    return false;
+  
+
+    return reacted;
   }
 
   template <typename State_>
-  auto& get() {
+  auto& get_state() {
     return std::get<StateMixin<State_>>(all_states_);
+  }
+
+  template <typename State_>
+  auto& get_target_state_combination() {
+    return std::get<state_id_v<State_>>(target_state_combinations_);
   }
 
 private:
   template <auto ... I>
-  StateMachine(std::index_sequence<I...>)
-  : all_states_{1, 1, 1, 1, 1},
-    active_state_configuration_{std::get<StateMixin<TopState_>>(all_states_), *this}
-  {}
+  void init(std::index_sequence<I...>) {
+    ((std::get<I>(all_states_).target_state_combination_ = &std::get<I>(target_state_combinations_)), ...);
+  }
 
   tuple_apply_t<StateMixin, States> all_states_;
   wrapper_t<TopState_> active_state_configuration_;
-  std::bitset<N> requested_transition_;
+  std::array<state_combination_t<TopState_>, N> target_state_combinations_;
 };
 
 

@@ -3,6 +3,7 @@
 #include <tuple>
 #include <variant>
 #include <iostream>
+#include <bitset>
 
 #include "type_algorithms.hpp"
 
@@ -155,7 +156,7 @@ using all_states_t = tuple_join_t<_StateDef, contained_states_recursive_t<_State
 template <typename _StateDef>
 struct state_id
 {
-    static constexpr std::size_t value = index_v<_StateDef, all_states_t<typename _StateDef::TopStateDef>>;
+    static constexpr std::size_t value = index_v<_StateDef, all_states_t<typename _StateDef::TopState>>;
 };
 
 template <>
@@ -167,29 +168,32 @@ struct state_id<RootState>
 template <typename _StateDef>
 constexpr std::size_t state_id_v = state_id<_StateDef>::value;
 
-template <typename _StateDef>
-struct state_combination
-{
-    static constexpr std::size_t value = 1 << state_id_v<_StateDef>;
-};
-
-template <typename ... _StateDef>
-struct state_combination<std::tuple<_StateDef...>>
-{
-    static constexpr std::size_t value = ((1 << state_id_v<_StateDef>) | ...);
-};
-
-template <>
-struct state_combination<std::tuple<>>
-{
-    static constexpr std::size_t value = 0;
-};
+template <typename _State>
+using state_combination_t = std::bitset<std::tuple_size_v<all_states_t<typename _State::TopState>>>;
 
 template <typename _StateDef>
-constexpr std::size_t state_combination_recursive_v = state_combination<all_states_t<_StateDef>>::value;
+auto state_combination(type_identity<_StateDef> = {})
+{
+    state_combination_t<typename _StateDef::TopState> value;
+    value.set(1 << state_id_v<_StateDef>);
+    return value;
+};
+
+template <typename _State1, typename ... _StateDef>
+auto state_combination(type_identity<std::tuple<_State1, _StateDef...>> = {})
+{
+    state_combination_t<typename _State1::TopState> value;
+    value.set(1 << state_id_v<_State1>);
+    (value.set(1 << state_id_v<_StateDef>) | ...);
+    return value;
+};
+
 
 template <typename _StateDef>
-constexpr std::size_t state_combination_v = state_combination<_StateDef>::value;
+const auto state_combination_recursive_v = state_combination<all_states_t<_StateDef>>();
+
+template <typename _StateDef>
+const auto state_combination_v = state_combination<_StateDef>();
 
 template <typename _StateDef, typename _ContextDef>
 constexpr bool is_in_context_recursive_v = state_combination_v<_StateDef> & state_combination_recursive_v<_ContextDef>;
