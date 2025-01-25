@@ -82,7 +82,7 @@ struct has_reaction_to_event : std::false_type
 {};
 
 template <typename _StateDef, typename _Event>
-struct has_reaction_to_event<_StateDef, _Event, std::void_t<std::is_invocable<decltype(&_StateDef::react), _StateDef&, const _Event&>>>
+struct has_reaction_to_event<_StateDef, _Event, std::void_t<std::enable_if_t<std::is_invocable_v<decltype(&_StateDef::react), _StateDef&, const _Event&>>>>
 : std::true_type
 {};
 
@@ -172,28 +172,28 @@ template <typename _State>
 using state_combination_t = std::bitset<std::tuple_size_v<all_states_t<typename _State::TopState>>>;
 
 template <typename _StateDef>
-auto state_combination(type_identity<_StateDef> = {})
+auto state_combination(type_identity<_StateDef>)
 {
     state_combination_t<typename _StateDef::TopState> value;
-    value.set(1 << state_id_v<_StateDef>);
+    value.set(state_id_v<_StateDef>);
     return value;
 };
 
 template <typename _State1, typename ... _StateDef>
-auto state_combination(type_identity<std::tuple<_State1, _StateDef...>> = {})
+auto state_combination(type_identity<std::tuple<_State1, _StateDef...>>)
 {
     state_combination_t<typename _State1::TopState> value;
-    value.set(1 << state_id_v<_State1>);
-    (value.set(1 << state_id_v<_StateDef>) | ...);
+    value.set(state_id_v<_State1>);
+    (value.set(state_id_v<_StateDef>), ...);
     return value;
 };
 
 
 template <typename _StateDef>
-const auto state_combination_recursive_v = state_combination<all_states_t<_StateDef>>();
+const auto state_combination_recursive_v = state_combination(type_identity<all_states_t<_StateDef>>{});
 
 template <typename _StateDef>
-const auto state_combination_v = state_combination<_StateDef>();
+const auto state_combination_v = state_combination(type_identity<_StateDef>{});
 
 template <typename _StateDef, typename _ContextDef>
 constexpr bool is_in_context_recursive_v = state_combination_v<_StateDef> & state_combination_recursive_v<_ContextDef>;
