@@ -35,6 +35,7 @@ protected:
   }
 
 public:
+  void react();
   void * target_state_combination_; // evaluation of state_combination_t needs to be deferred
 };
 }
@@ -42,13 +43,25 @@ public:
 template <typename TopState_>
 using State = detail::State_<TopState_>;
 
+template <typename State_, typename _SFINAE = void>
+struct StateMixin : public State_
+{
+  using typename State_::TopState;
+  using State_::react;
+
+  template <typename Event_>
+  bool react(Event_ const&) {
+    return false;
+  }
+};
+
 
 template <typename State_>
 class StateWrapper {
 public:
   using StateMachine = metahsm::StateMachine<typename State_::TopState>;
 
-  StateWrapper(State_& state)
+  StateWrapper(StateMixin<State_>& state)
   : state_{state}
   {
     if constexpr (has_entry_action_v<State_>) {
@@ -65,7 +78,7 @@ public:
 
   template <typename Event_>
   bool handle_event(const Event_& e) {
-    if constexpr(has_reaction_to_event_v<State_, Event_>) {
+    //if constexpr(has_reaction_to_event_v<State_, Event_>) {
       if constexpr(std::is_void_v<decltype(this->state_.react(e))>) {
         this->state_.react(e);
         return true;
@@ -73,12 +86,12 @@ public:
       else {
         return this->state_.react(e);
       }
-    }
+    //}
     return false; 
   }
 
 protected:
-  State_ & state_;
+  StateMixin<State_> & state_;
 };
 
 template <typename State_>
@@ -87,7 +100,7 @@ class SimpleStateWrapper : public StateWrapper<State_>
 public:
   using typename StateWrapper<State_>::StateMachine;
 
-  SimpleStateWrapper(State_& state, StateMachine&)
+  SimpleStateWrapper(StateMixin<State_>& state, StateMachine&)
   : StateWrapper<State_>(state)
   { }
 };
@@ -101,7 +114,7 @@ public:
   using SubStateWrappers = tuple_apply_t<wrapper_t, SubStates>;
   using typename StateWrapper<State_>::StateMachine;
 
-  CompositeStateWrapper(State_& state, StateMachine& state_machine)
+  CompositeStateWrapper(StateMixin<State_>& state, StateMachine& state_machine)
   : StateWrapper<State_>(state),
     state_machine_{state_machine},
     active_sub_state_{std::in_place_type<wrapper_t<initial_state_t<State_>>>,
@@ -155,10 +168,11 @@ class StateMachine
 {
 public:
   using States = all_states_t<TopState_>;
+  using StateMixins = tuple_apply_t<StateMixin, States>;
   static constexpr std::size_t N = std::tuple_size_v<States>;
 
   StateMachine()
-  : active_state_configuration_{std::get<TopState_>(all_states_), *this}
+  : active_state_configuration_{get_state<TopState_>(), *this}
   {
     init(std::make_index_sequence<N>());
   }
@@ -175,7 +189,7 @@ public:
 
   template <typename State_>
   auto& get_state() {
-    return std::get<State_>(all_states_);
+    return std::get<StateMixin<State_>>(all_states_);
   }
 
   template <typename State_>
@@ -201,7 +215,7 @@ private:
     ((std::get<I>(all_states_).target_state_combination_ = &std::get<I>(target_state_combinations_)), ...);
   }
 
-  States all_states_;
+  StateMixins all_states_;
   wrapper_t<TopState_> active_state_configuration_;
   std::array<state_combination_t<TopState_>, N> target_state_combinations_;
 };

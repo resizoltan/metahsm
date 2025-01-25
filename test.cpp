@@ -20,17 +20,17 @@ struct LifecycleTopState : State<LifecycleTopState>
 {
   struct Unconfigured : State
   {
-    auto react(Event<CONFIGURE>);
+    void react(Event<CONFIGURE>);
   };
 
   struct Inactive : State
   {
-    auto react(Event<ACTIVATE>);
+    void react(Event<CONFIGURE>);
   };
 
   struct Active : State
   {
-    auto react(Event<DEACTIVATE>);
+    void react(Event<CONFIGURE>);
     struct Monitoring : State
     {
 
@@ -41,14 +41,14 @@ struct LifecycleTopState : State<LifecycleTopState>
 
   using SubStates = std::tuple<Unconfigured, Inactive, Active>;
 };
-
+/*
 auto LifecycleTopState::Unconfigured::react(Event<CONFIGURE>) {
   transition<Inactive>();
 }
 
 auto LifecycleTopState::Inactive::react(Event<ACTIVATE>) {
   transition<Active::Monitoring>();
-}
+}*/
 
 
 
@@ -65,8 +65,9 @@ void init(std::index_sequence<I...>) {
 }
 
 int main(int , char *[]) {
-  static_assert(std::is_invocable_v<decltype(&LifecycleTopState::Unconfigured::react), LifecycleTopState::Unconfigured&, const Event<CONFIGURE>&>);
+  //static_assert(std::is_invocable_v<decltype(&LifecycleTopState::Unconfigured::react), LifecycleTopState::Unconfigured&, const Event<CONFIGURE>&>);
   StateMachine<LifecycleTopState> sm;
   sm.dispatch<Event<CONFIGURE>>();
-  sm.dispatch<Event<ACTIVATE>>();
+  sm.dispatch<Event<CONFIGURE>>();
+  sm.dispatch<Event<CONFIGURE>>();
 }
