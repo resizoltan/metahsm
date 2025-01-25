@@ -305,47 +305,20 @@ class CompositeStateWrapper;
 template <typename _StateDef>
 class OrthogonalStateWrapper;
 
-template <typename _StateMixin, typename _StateBase = base_t<typename _StateMixin::StateDef>>
+template <typename State_, typename _StateBase = base_t<State_>>
 struct wrapper;
 
-template <typename _StateMixin>
-struct wrapper<_StateMixin, SimpleStateBase> { using type = SimpleStateWrapper<_StateMixin>; };
+template <typename State_>
+struct wrapper<State_, SimpleStateBase> { using type = SimpleStateWrapper<State_>; };
 
-template <typename _StateMixin>
-struct wrapper<_StateMixin, CompositeStateBase> { using type = CompositeStateWrapper<_StateMixin>; };
+template <typename State_>
+struct wrapper<State_, CompositeStateBase> { using type = CompositeStateWrapper<State_>; };
 
-template <typename _StateMixin>
-struct wrapper<_StateMixin, OrthogonalStateBase> { using type = OrthogonalStateWrapper<_StateMixin>; };
+template <typename State_>
+struct wrapper<State_, OrthogonalStateBase> { using type = OrthogonalStateWrapper<State_>; };
 
-template <typename _StateMixin>
-using wrapper_t = typename wrapper<_StateMixin>::type;
-
-template <typename _StateMixins>
-struct wrappers;
-
-template <typename ... _StateMixin>
-struct wrappers<std::tuple<_StateMixin...>>
-{
-    using type = std::tuple<wrapper_t<_StateMixin>...>;
-};
-
-template <typename _StateMixins>
-using wrappers_t = typename wrappers<_StateMixins>::type;
-
-template <typename _StateDef>
-class StateMixin;
-
-template <typename _StateDefs>
-struct mixins;
-
-template <typename ... _StateDef>
-struct mixins<std::tuple<_StateDef...>>
-{
-    using type = std::tuple<StateMixin<_StateDef>...>;
-};
-
-template <typename _StateDefs>
-using mixins_t = typename mixins<_StateDefs>::type;
+template <typename State_>
+using wrapper_t = typename wrapper<State_>::type;
 
 template <typename _TopState>
 bool is_legal_state_combination(std::size_t state_combination) {
