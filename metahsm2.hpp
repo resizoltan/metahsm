@@ -30,7 +30,9 @@ protected:
 
   template <typename State_>
   void transition() {
-    static_cast<state_combination_t<TopState_>*>(target_state_combination_p_)->set(index_v<State_, all_states_t<TopState>>);
+    auto& current_target_branch = *static_cast<state_combination_t<TopState_>*>(target_state_combination_p_);
+    auto new_target_branch = state_combination_v<tuple_join_t<State_, super_state_recursive_t<State_>>>;
+    merge_if_valid<TopState>(current_target_branch, new_target_branch);
   }
 
   template <typename State_>

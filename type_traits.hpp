@@ -3,7 +3,7 @@
 #include <tuple>
 #include <variant>
 #include <iostream>
-#include <bitset> // TODO constexpr bitset impl
+#include <bitset>
 
 #include "type_algorithms.hpp"
 
@@ -165,13 +165,22 @@ const bool is_in_context_recursive_v = (state_combination_v<_StateDef> & state_c
 template <typename _StateDef, typename _AllStateDefs>
 struct super_state;
 
+template <typename State1_, typename StateTuple_>
+struct any;
+
+template <typename State1_, typename ... State_>
+struct any<State1_, std::tuple<State_...>>
+{
+    static constexpr bool value = ((state_id_v<State1_> == state_id_v<State_>) || ...);
+};
+
 template <typename _StateDef, typename ... _OtherStateDef>
 struct super_state<_StateDef, std::tuple<_OtherStateDef...>>
 {
     using direct = first_non_void_t<
         RootState,
         std::conditional_t<
-            static_cast<bool>(state_combination_v<contained_states_direct_t<_OtherStateDef>> & state_combination_v<_StateDef>),
+           any<_StateDef, contained_states_direct_t<_OtherStateDef>>::value,
             _OtherStateDef,
             void>...
         >;
@@ -185,10 +194,10 @@ struct super_state<RootState, std::tuple<_OtherStateDef...>>
 };
 
 template <typename _StateDef>
-using super_state_direct_t  = typename super_state<_StateDef, all_states_t<typename _StateDef::TopStateDef>>::direct;
+using super_state_direct_t  = typename super_state<_StateDef, all_states_t<typename _StateDef::TopState>>::direct;
 
 template <typename _StateDef>
-using super_state_recursive_t  = typename super_state<_StateDef, all_states_t<typename _StateDef::TopStateDef>>::recursive;
+using super_state_recursive_t  = typename super_state<_StateDef, all_states_t<typename _StateDef::TopState>>::recursive;
 
 template <typename _StateDef, typename _StateBase = base_t<_StateDef>>
 struct default_initial_state;
