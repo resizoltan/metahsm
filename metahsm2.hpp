@@ -20,22 +20,22 @@ class StateMachine;
 namespace detail {
 
 template <typename TopState_>
-class State_ : public StateBase
+class StateImpl_ : public StateBase
 {
 public:
-  using State = State_<TopState_>;
+  using State = StateImpl_<TopState_>;
   using TopState = TopState_;
 
 protected:
 
-  template <typename TargetState_>
+  template <typename State_>
   void transition() {
-    static_cast<state_combination_t<TopState_>*>(target_state_combination_p_)->set(state_id_v<TargetState_>);
+    static_cast<state_combination_t<TopState_>*>(target_state_combination_p_)->set(state_id_v<State_>);
   }
 
   template <typename State_>
   State_& context() {
-
+    return state_machine_->template get_state<State_>();
   }
 
   void react();
@@ -49,7 +49,7 @@ protected:
 }
 
 template <typename TopState_>
-using State = detail::State_<TopState_>;
+using State = detail::StateImpl_<TopState_>;
 
 template <typename State_>
 class StateMixin : public State_

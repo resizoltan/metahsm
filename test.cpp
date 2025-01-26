@@ -31,6 +31,8 @@ struct LifecycleTopState : State<LifecycleTopState>
   struct Active : State
   {
     void react(Event<DEACTIVATE>);
+    int i = 0;
+
     struct Monitoring : State
     {
 
@@ -44,6 +46,8 @@ struct LifecycleTopState : State<LifecycleTopState>
 
 void LifecycleTopState::Unconfigured::react(Event<CONFIGURE>) {
   transition<Inactive>();
+  auto& active_context = context<Active>();
+  active_context.i = 1;
 }
 
 void LifecycleTopState::Inactive::react(Event<ACTIVATE>) {
