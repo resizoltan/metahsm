@@ -37,8 +37,13 @@ struct LifecycleTopState : State<LifecycleTopState>
     {
 
     };
+
+    struct Commanding : State
+    {
+
+    };
     
-    using SubStates = std::tuple<Monitoring>;
+    using Regions = std::tuple<Monitoring, Commanding>;
   };
 
   using SubStates = std::tuple<Unconfigured, Inactive, Active>;

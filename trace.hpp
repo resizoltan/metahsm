@@ -12,7 +12,7 @@ namespace metahsm
 template <typename T>
 constexpr auto get_type_name(){
     std::string_view pretty_function = __PRETTY_FUNCTION__;
-    auto start = pretty_function.find("T =") + 3;
+    auto start = pretty_function.find("T =") + 4;
     auto length = pretty_function.substr(start).find("]");
     return pretty_function.substr(start, length);
 }
@@ -23,17 +23,20 @@ const std::array<std::string_view, std::tuple_size_v<all_states_t<_TopStateDef>>
 }, tuple_apply_t<type_identity, all_states_t<_TopStateDef>>{});
 
 template <typename _StateDef>
-void trace_react(ReactionResult<typename _StateDef::TopStateDef> result) {
-    std::string did_react = result.reacted ? "true" : "false";
-    std::size_t target = result.target_combination;
+void trace_react(bool result, state_combination_t<typename _StateDef::TopState> & target) {
+    std::string did_react = result ? "true" : "false";
     std::cout << get_type_name<_StateDef>() << "::react: "  << did_react;
-    if(target != 0) {
-        std::cout << ", target: ";
-        for(std::size_t state_id = 0; state_id < std::tuple_size_v<all_states_t<typename _StateDef::TopStateDef>>; state_id++) {
-            if(static_cast<bool>((1 << state_id) & target)) {
-                std::cout << state_names<typename _StateDef::TopStateDef>.at(state_id) << ", ";
+    if(target.any()) {
+        std::cout << ", target: {";
+        bool first = true;
+        for(std::size_t state_id = 0; state_id < std::tuple_size_v<all_states_t<typename _StateDef::TopState>>; state_id++) {
+            if(target.test(state_id)) {
+                if (first) { first = false; }
+                else { std::cout << ","; }
+                std::cout << state_names<typename _StateDef::TopState>.at(state_id);
             }
         }
+        std::cout << "}";
     }
     else {
         std::cout << ", no target";

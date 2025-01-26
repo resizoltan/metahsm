@@ -320,9 +320,13 @@ bool is_legal_state_combination_old(std::size_t state_combination) {
 }
 
 template <typename TopState_>
-void merge_if_valid(state_combination_t<TopState_> & c1, state_combination_t<TopState_> const& c2) {
+bool merge_if_valid(state_combination_t<TopState_> & c1, state_combination_t<TopState_> const& c2) {
     if((c1 & ~c2).none() || (c2 & ~c1).none()) {
         c1 |= c2;
+        return true;
+    }
+    else {
+        return false;
     }
 }
 
