@@ -3,7 +3,7 @@
 #include <tuple>
 #include <variant>
 #include <iostream>
-#include <bitset>
+#include <bitset> // TODO constexpr bitset impl
 
 #include "type_algorithms.hpp"
 
@@ -160,7 +160,7 @@ template <typename _StateDef>
 const auto state_combination_v = state_combination(type_identity<_StateDef>{});
 
 template <typename _StateDef, typename _ContextDef>
-constexpr bool is_in_context_recursive_v = state_combination_v<_StateDef> & state_combination_recursive_v<_ContextDef>;
+const bool is_in_context_recursive_v = (state_combination_v<_StateDef> & state_combination_recursive_v<_ContextDef>).any();
 
 template <typename _StateDef, typename _AllStateDefs>
 struct super_state;

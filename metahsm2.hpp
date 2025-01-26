@@ -30,28 +30,43 @@ protected:
 
   template <typename TargetState_>
   void transition() {
-      //(static_assert(is_in_context_recursive_v<_TargetStateDef, TopStateDef>),...);
-    static_cast<state_combination_t<TopState_>*>(target_state_combination_)->set(state_id_v<TargetState_>);
+    static_cast<state_combination_t<TopState_>*>(target_state_combination_p_)->set(state_id_v<TargetState_>);
   }
 
-public:
+  template <typename State_>
+  State_& context() {
+
+  }
+
   void react();
   void on_entry();
   void on_exit();
-  void * target_state_combination_; // evaluation of state_combination_t needs to be deferred
+
+protected:
+  StateMachine<TopState_> * state_machine_;
+  void * target_state_combination_p_;
 };
 }
 
 template <typename TopState_>
 using State = detail::State_<TopState_>;
 
-template <typename State_, typename _SFINAE = void>
-struct StateMixin : public State_
+template <typename State_>
+class StateMixin : public State_
 {
+public:
   using typename State_::TopState;
   using State_::react;
   using State_::on_entry;
   using State_::on_exit;
+
+  StateMixin() {
+    this->target_state_combination_p_ = &target_state_combination_;
+  }
+
+  void init(StateMachine<TopState> * state_machine) {
+    this->state_machine_ = state_machine;
+  }
 
   template <typename Event_>
   bool react(Event_ const&) {
@@ -60,6 +75,13 @@ struct StateMixin : public State_
 
   void on_entry() {}
   void on_exit() {}
+
+  auto& target() {
+    return target_state_combination_;
+  }
+
+private:
+  state_combination_t<TopState> target_state_combination_;
 };
 
 
@@ -175,7 +197,10 @@ public:
   StateMachine()
   : active_state_configuration_{get_state<TopState_>(), *this}
   {
-    init(std::make_index_sequence<N>());
+    auto init = [&](auto& ... state) {
+      (state.init(this), ...);
+    };
+    std::apply(init, all_states_);
   }
 
   // TODO copy, move ctor
@@ -193,32 +218,19 @@ public:
     return std::get<StateMixin<State_>>(all_states_);
   }
 
-  template <typename State_>
-  auto& get_target_state_combination() {
-    return std::get<state_id_v<State_>>(target_state_combinations_);
-  }
-
   auto compute_target_state_combination() {
-    auto it = std::find_if(target_state_combinations_.begin(), target_state_combinations_.end(), [&](auto& v){ return v.any(); });
-    state_combination_t<TopState_> target{};
-    if (it != target_state_combinations_.end()) {
-      target = *it;
-      for(auto & comb : target_state_combinations_) {
-        comb = {};
-      }
-    }
-    return target;
+    auto find = [&](auto& ... state) {
+      state_combination_t<TopState_> target{};
+      ((target = state.target()).any() || ...);
+      ((state.target() = {}), ...);
+      return target;
+    };
+    return std::apply(find, all_states_);
   }
 
 private:
-  template <auto ... I>
-  void init(std::index_sequence<I...>) {
-    ((std::get<I>(all_states_).target_state_combination_ = &std::get<I>(target_state_combinations_)), ...);
-  }
-
   StateMixins all_states_;
   wrapper_t<TopState_> active_state_configuration_;
-  std::array<state_combination_t<TopState_>, N> target_state_combinations_;
 };
 
 
