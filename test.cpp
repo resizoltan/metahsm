@@ -43,10 +43,11 @@ struct LifecycleTopState : State<LifecycleTopState>
 
     };
     
-    using Regions = std::tuple<Monitoring, Commanding>;
+    using SubStates = std::tuple<Monitoring, Commanding>;
   };
 
   using SubStates = std::tuple<Unconfigured, Inactive, Active>;
+  using Initial = Inactive;
 };
 
 void LifecycleTopState::Unconfigured::react(Event<CONFIGURE>) {

@@ -143,12 +143,16 @@ class SimpleStateWrapper : public StateWrapper<State_>
 {
 public:
   using typename StateWrapper<State_>::StateMachine;
+  using TopState = typename State_::TopState;
 
   SimpleStateWrapper(WrapperArgs<State_> args)
   : StateWrapper<State_>(args.state)
   { 
     this->active_state_combination_ = state_combination_v<State_>;
   }
+
+  void execute_transition(state_combination_t<TopState> const&) {}
+
 };
 
 template <typename State_>
@@ -245,7 +249,7 @@ public:
   bool handle_event(const Event_& e) {
     auto do_handle_event = [&](auto& ... region){
       bool reacted = false;
-      ((reacted = reacted || region->handle_event(e)), ...);
+      ((reacted = region->handle_event(e) || reacted), ...);
       return reacted;
     };
     bool reacted = std::apply(do_handle_event, regions_);
@@ -255,9 +259,7 @@ public:
   void execute_transition(state_combination_t<TopState> const& target) {
     auto do_execute_transition = [&](auto& ... region){
       auto exec_if_not_simple = [&](auto& region) {
-        if constexpr (!is_simple_state_v<std::remove_reference_t<decltype(region)>>) {
-          region.execute_transition();
-        }
+        region.execute_transition(target);
       };
       (exec_if_not_simple(*region), ...);
     };
