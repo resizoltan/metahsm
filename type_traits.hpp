@@ -289,7 +289,7 @@ template <typename State_>
 using wrapper_t = typename wrapper<State_>::type;
 
 template <typename _TopState>
-bool is_legal_state_combination(std::size_t state_combination) {
+bool is_legal_state_combination_old(std::size_t state_combination) {
     auto is_legal_for_state = [&](auto state_identity) {
         using StateDef = typename decltype(state_identity)::type;
         if constexpr(has_substates_v<StateDef>) {
@@ -308,6 +308,13 @@ bool is_legal_state_combination(std::size_t state_combination) {
         return (is_legal_for_state(state_identity) && ...);
     };
     return std::apply(is_legal_for_states, type_identity_tuple<all_states_t<_TopState>>{});
+}
+
+template <typename TopState_>
+void merge_if_valid(state_combination_t<TopState_> & c1, state_combination_t<TopState_> const& c2) {
+    if((c1 & ~c2).none() || (c2 & ~c1).none()) {
+        c1 |= c2;
+    }
 }
 
 }

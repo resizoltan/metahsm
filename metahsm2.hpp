@@ -30,7 +30,7 @@ protected:
 
   template <typename State_>
   void transition() {
-    static_cast<state_combination_t<TopState_>*>(target_state_combination_p_)->set(state_id_v<State_>);
+    static_cast<state_combination_t<TopState_>*>(target_state_combination_p_)->set(index_v<State_, all_states_t<TopState>>);
   }
 
   template <typename State_>
@@ -221,7 +221,7 @@ public:
   auto compute_target_state_combination() {
     auto find = [&](auto& ... state) {
       state_combination_t<TopState_> target{};
-      ((target = state.target()).any() || ...);
+      (merge_if_valid<TopState_>(target, state.target()), ...);
       ((state.target() = {}), ...);
       return target;
     };
