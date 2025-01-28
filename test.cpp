@@ -20,17 +20,17 @@ struct LifecycleTopState : State<LifecycleTopState>
 {
   struct Unconfigured : State
   {
-    void react(Event<CONFIGURE>);
+    void react(Event<CONFIGURE>); // -> Inactive
   };
 
   struct Inactive : State
   {
-    void react(Event<ACTIVATE>);
+    void react(Event<ACTIVATE>); // -> Active
   };
 
   struct Active : State
   {
-    void react(Event<DEACTIVATE>);
+    inline void react(Event<DEACTIVATE>) { transition<Inactive>(); }
     int i = 0;
 
     struct Monitoring : State
@@ -47,7 +47,6 @@ struct LifecycleTopState : State<LifecycleTopState>
   };
 
   using SubStates = std::tuple<Unconfigured, Inactive, Active>;
- // using Initial = Inactive;
 };
 
 void LifecycleTopState::Unconfigured::react(Event<CONFIGURE>) {
@@ -58,10 +57,6 @@ void LifecycleTopState::Unconfigured::react(Event<CONFIGURE>) {
 
 void LifecycleTopState::Inactive::react(Event<ACTIVATE>) {
   transition<Active::Commanding>();
-  transition<Inactive>();
-}
-
-void LifecycleTopState::Active::react(Event<DEACTIVATE>) {
   transition<Inactive>();
 }
 
@@ -78,8 +73,6 @@ void init(std::index_sequence<I...>) {
 
   //tuple_apply_t<StateMixin, all_states_t<LifecycleTopState>> states{(I, 1)...};
 }
-
-static_assert(is_orthogonal_class<LifecycleTopState::Active>::value == true);
 
 int main(int , char *[]) {
   //static_assert(std::is_invocable_v<decltype(&LifecycleTopState::Unconfigured::react), LifecycleTopState::Unconfigured&, const Event<CONFIGURE>&>);

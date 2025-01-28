@@ -152,7 +152,6 @@ auto state_combination(type_identity<std::tuple<_State1, _StateDef...>>)
     return value;
 };
 
-
 template <typename _StateDef>
 const auto state_combination_recursive_v = state_combination(type_identity<all_states_t<_StateDef>>{});
 
@@ -238,41 +237,6 @@ struct default_initial_state<_StateDef, OrthogonalStateBase>
 template <typename _StateDef>
 using initial_state_t = typename initial_state<_StateDef>::type;
 
-template <typename _StateDef, typename _StateBase = base_t<_StateDef>>
-struct initial_state_combination;
-
-template <typename _StateDef>
-using initial_state_combination_t = typename initial_state_combination<_StateDef>::type;
-
-template <typename _StateDef>
-constexpr std::size_t initial_state_combination_v = state_combination_v<initial_state_combination_t<_StateDef>>;
-
-template <typename _StateDef>
-struct initial_state_combination<_StateDef, SimpleStateBase>
-{
-    using type = std::tuple<>;
-};
-
-template <typename _StateDef>
-struct initial_state_combination<_StateDef, CompositeStateBase>
-{
-    using type = tuple_join_t<initial_state_t<_StateDef>, initial_state_combination_t<initial_state_t<_StateDef>>>; 
-};
-
-template <typename _StateDef>
-struct initial_state_combination<_StateDef, OrthogonalStateBase>
-{
-    using type = tuple_apply_t<initial_state_combination_t, contained_states_direct_t<_StateDef>>; 
-};
-
-template <typename _StateDef, typename ... _SubStateDef>
-std::size_t compute_direct_substate(std::size_t target, type_identity<std::tuple<_SubStateDef...>>) {
-    std::size_t substate_local_id = 0;
-    bool found = (static_cast<bool>(substate_local_id++, state_combination_recursive_v<_SubStateDef> & target) || ...)
-        || (substate_local_id++, true);
-    return found ? substate_local_id - 1 : 0;
-}
-
 template <typename _StateDef>
 class SimpleStateWrapper;
 
@@ -297,36 +261,14 @@ struct wrapper<State_, OrthogonalStateBase> { using type = OrthogonalStateWrappe
 template <typename State_>
 using wrapper_t = typename wrapper<State_>::type;
 
-template <typename _TopState>
-bool is_legal_state_combination_old(std::size_t state_combination) {
-    auto is_legal_for_state = [&](auto state_identity) {
-        using StateDef = typename decltype(state_identity)::type;
-        if constexpr(has_substates_v<StateDef>) {
-            int number_of_contained_branches = 0;
-            auto contains_branch = [&](auto ... branch_identity) {
-                number_of_contained_branches = (((state_combination_v<typename decltype(branch_identity)::type> & state_combination) ? 1 : 0) + ...);
-            };
-            std::apply(contains_branch, type_identity_tuple<contained_states_direct_t<StateDef>>{});
-            if(number_of_contained_branches > 1) {
-                return false;
-            }
-        }
-        return true;
-    };
-    auto is_legal_for_states = [&] (auto ... state_identity) {
-        return (is_legal_for_state(state_identity) && ...);
-    };
-    return std::apply(is_legal_for_states, type_identity_tuple<all_states_t<_TopState>>{});
-}
-
 template <typename State_>
-struct is_orthogonal_class
+struct is_orthogonal_state
 {
     static constexpr bool value = std::is_same_v<base_t<State_>, OrthogonalStateBase>;
 };
 
 template <typename States_>
-using orthogonal_states_t = tuple_filter_t<is_orthogonal_class, States_>;
+using orthogonal_states_t = tuple_filter_t<is_orthogonal_state, States_>;
 
 template <typename OrthogonalStates_>
 struct all_regions;
