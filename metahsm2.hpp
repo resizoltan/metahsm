@@ -28,7 +28,6 @@ public:
   using TopState = TopState_;
 
 protected:
-
   template <typename TargetState_>
   bool transition() {
     auto& current_target_branch = *static_cast<state_combination_t<TopState_>*>(target_state_combination_branch_p_);
@@ -40,23 +39,19 @@ protected:
     return false;
   }
 
-  template <typename TargetState_, typename Callable_>
-  bool transition(Callable_ const& transition_action) {
-    bool ok = transition<TargetState_>();
-    if(ok) {
-      transition_action_ = transition_action;
-    }
-    return ok;
+  template <typename Callable_>
+  bool transition_action(Callable_ const& action) {
+    transition_action_ = action;
+    return true;
   }
 
-  template <typename TargetState_, typename SourceState_>
-  bool transition(void(SourceState_::*transition_action)()) {
-
+  template <typename SourceState_>
+  bool transition_action(void(SourceState_::*action)()) {
     if(&context<SourceState_>() != this) {
       return false;
     }
     auto state = static_cast<SourceState_*>(this);
-    return transition<TargetState_>(std::bind(transition_action, state));
+    return transition_action(std::bind(action, state));
   }
 
   template <typename State_>

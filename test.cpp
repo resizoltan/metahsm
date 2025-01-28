@@ -39,15 +39,20 @@ struct LifecycleTopState : State<LifecycleTopState>
     {
       struct Monitoring : State
       {
-        inline void react(Event<ACTIVATE>) { transition<Commanding>(&action); }
+        inline void react(Event<ACTIVATE>) {
+          transition<Commanding>();
+          transition_action(&action);
+        }
         inline void action() { std::cout << "Action!" << std::endl; }
       };
 
       struct Commanding : State
       {
         inline void react(Event<CLEANUP>) { 
-          transition<Monitoring>([this](){ std::cout << "Action1!" << std::endl; });
-          transition<Safety::Error>([this](){ std::cout << "Action2!" << std::endl; });
+          std::cout << "Before Action1!" << std::endl;
+          transition<Monitoring>();
+          transition<Safety::Error>();
+          transition_action([this](){ std::cout << "Action1!" << std::endl; });
         }
       };
       using SubStates = std::tuple<Monitoring, Commanding>;
@@ -56,7 +61,12 @@ struct LifecycleTopState : State<LifecycleTopState>
     struct Safety : State
     {
       struct Ok : State
-      { };
+      {
+        inline void react(Event<CLEANUP>) {
+          std::cout << "Before Action3!" << std::endl;
+          transition_action([this](){ std::cout << "Action3!" << std::endl; });
+        }
+      };
 
       struct Error : State
       { };
@@ -72,7 +82,7 @@ struct LifecycleTopState : State<LifecycleTopState>
 };
 
 void LifecycleTopState::Unconfigured::react(Event<CONFIGURE>) {
-  transition<Inactive>([this](){ std::cout << "Action!" << std::endl; });
+  transition<Inactive>();
   auto& active_context = context<Active>();
   active_context.i = 1;
 }
