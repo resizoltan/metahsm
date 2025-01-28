@@ -77,9 +77,8 @@ template <typename TopState_>
 using State = detail::StateImpl_<TopState_>;
 
 template <typename State_>
-class StateMixin : public State_
+struct StateMixin : public State_
 {
-public:
   using typename State_::TopState;
   using State_::react;
   using State<TopState>::react;
@@ -87,29 +86,21 @@ public:
   using State_::on_exit;
 
   StateMixin() {
-    this->target_state_combination_branch_p_ = &target_state_combination_branch_;
-    this->target_state_combination_p_ = &target_state_combination_;
+    this->target_state_combination_branch_p_ = &target_branch;
+    this->target_state_combination_p_ = &target;
   }
 
   void init(StateMachine<TopState> * state_machine) {
     this->state_machine_ = state_machine;
   }
 
-  auto& target() {
-    return target_state_combination_branch_;
-  }
-
-  auto& requested() {
-    return target_state_combination_;
-  }
-
   auto& action() {
     return this->transition_action_;
   }
 
-private:
-  state_combination_t<TopState> target_state_combination_branch_;
-  state_combination_t<TopState> target_state_combination_; // for cleaner logging
+  state_combination_t<TopState> target_branch;
+  state_combination_t<TopState> target; // for cleaner logging
+  state_combination_t<TopState> last_recursive;
 };
 
 template <typename State_>
@@ -149,11 +140,13 @@ public:
     else {
       result = this->state_.react(e);
     }
-    trace_react<State_>(result, state_.requested());
+    trace_react<State_>(result, state_.target);
     return result; 
   }
 
-  state_combination_t<TopState> active_state_combination_;
+  auto& state() {
+    return state_;
+  }
 
 protected:
   StateMixin<State_> & state_;
@@ -169,7 +162,7 @@ public:
   SimpleStateWrapper(WrapperArgs<State_> args)
   : StateWrapper<State_>(args.state)
   { 
-    this->active_state_combination_ = state_combination_v<State_>;
+    this->state().last_recursive = state_combination_v<State_>;
   }
 
   void exit(state_combination_t<TopState> const&) {}
@@ -209,7 +202,7 @@ public:
 
   void exit(state_combination_t<TopState> const& target) {
     if ((target & state_combination_recursive_v<State_>).any()
-        && (target & this->active_state_combination_ & ~state_combination_v<State_>).none()) {
+        && (target & this->state().last_recursive & ~state_combination_v<State_>).none()) {
       active_sub_state_ = std::monostate{};
     }
     else {
@@ -250,10 +243,10 @@ private:
 
   void update_state_combination() {
     auto updater = overload{
-      [&](auto& substate){ return substate.active_state_combination_; },
+      [&](auto& substate){ return substate.state().last_recursive; },
       [](std::monostate){ return state_combination_t<TopState>{}; }
     };
-    this->active_state_combination_ = state_combination_v<State_> | std::visit(updater, active_sub_state_);
+    this->state().last_recursive = state_combination_v<State_> | std::visit(updater, active_sub_state_);
   }
 
 };
@@ -316,7 +309,7 @@ private:
     std::apply(step1, regions_);
     
     auto step2 = [&](auto& ... region){
-      this->active_state_combination_ = (region->active_state_combination_ | ...);
+      this->state().last_recursive = (region->state().last_recursive | ...);
     };
     std::apply(step2, regions_);
   }
@@ -370,12 +363,12 @@ public:
     auto find = [&](auto& ... state) {
       state_combination_t<TopState_> target{};
       auto resolve_conflicts = [&](auto& s) {
-        if(!merge_if_valid<TopState_>(target, s.target())) {
+        if(!merge_if_valid<TopState_>(target, s.target_branch)) {
           s.action().reset();
         }
       };
       (resolve_conflicts(state), ...);
-      ((state.target() = {}), ...);
+      ((state.target_branch = {}), ...);
       return target;
     };
     return std::apply(find, all_states_);
