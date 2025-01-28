@@ -33,17 +33,36 @@ struct LifecycleTopState : State<LifecycleTopState>
     inline void react(Event<DEACTIVATE>) { transition<Inactive>(); }
     int i = 0;
 
-    struct Monitoring : State
+    struct Operation : State
     {
-      inline void react(Event<ACTIVATE>) { transition<Commanding>(); }
+      struct Monitoring : State
+      {
+        inline void react(Event<ACTIVATE>) { transition<Commanding>(); }
+      };
+
+      struct Commanding : State
+      {
+        inline void react(Event<CLEANUP>) { 
+          transition<Monitoring>();
+          transition<Safety::Error>();
+        }
+      };
+      using SubStates = std::tuple<Monitoring, Commanding>;
     };
 
-    struct Commanding : State
+    struct Safety : State
     {
+      struct Ok : State
+      { };
 
+      struct Error : State
+      { };
+
+      using SubStates = std::tuple<Ok, Error>;
     };
+
+    using Regions = std::tuple<Operation, Safety>;
     
-    using SubStates = std::tuple<Monitoring, Commanding>;
   };
 
   using SubStates = std::tuple<Unconfigured, Inactive, Active>;
@@ -80,5 +99,6 @@ int main(int , char *[]) {
   sm.dispatch<Event<CONFIGURE>>();
   sm.dispatch<Event<ACTIVATE>>();
   sm.dispatch<Event<ACTIVATE>>();
+  sm.dispatch<Event<CLEANUP>>();
   sm.dispatch<Event<DEACTIVATE>>();
 }

@@ -151,8 +151,8 @@ public:
     this->active_state_combination_ = state_combination_v<State_>;
   }
 
-  void execute_transition(state_combination_t<TopState> const&) {}
-
+  void exit(state_combination_t<TopState> const&) {}
+  void enter(state_combination_t<TopState> const&) {}
 };
 
 template <typename State_>
@@ -186,17 +186,26 @@ public:
     return reacted || this->StateWrapper<State_>::handle_event(e);
   }
 
-  void execute_transition(state_combination_t<TopState> const& target) {
-    if ((target & this->active_state_combination_ & ~state_combination_v<State_>).none()) {
-      change_state(target, type_identity<SubStates>{});
+  void exit(state_combination_t<TopState> const& target) {
+    if ((target & state_combination_recursive_v<State_>).any()
+        && (target & this->active_state_combination_ & ~state_combination_v<State_>).none()) {
+      active_sub_state_ = std::monostate{};
     }
     else {
       auto do_execute_transition = overload{
-        [&](auto& active_sub_state){ active_sub_state.execute_transition(target); },
+        [&](auto& active_sub_state){ active_sub_state.exit(target); },
         [](std::monostate) { }
       };
       std::visit(do_execute_transition, active_sub_state_);
     }
+  }
+
+  void enter(state_combination_t<TopState> const& target) {
+    auto do_execute_transition = overload{
+      [&](auto& active_sub_state){ active_sub_state.enter(target); },
+      [&](std::monostate) { this->change_state(target, type_identity<SubStates>{}); }
+    };
+    std::visit(do_execute_transition, active_sub_state_);
   }
 
 private:  
@@ -263,14 +272,18 @@ public:
     return reacted || this->StateWrapper<State_>::handle_event(e);
   }
 
-  void execute_transition(state_combination_t<TopState> const& target) {
-    auto do_execute_transition = [&](auto& ... region){
-      auto exec_if_not_simple = [&](auto& region) {
-        region.execute_transition(target);
-      };
-      (exec_if_not_simple(*region), ...);
+  void exit(state_combination_t<TopState> const& target) {
+    auto do_exit = [&](auto& ... region){
+      (region->exit(target), ...);
     };
-    std::apply(do_execute_transition, regions_);
+    std::apply(do_exit, regions_);
+  }
+
+  void enter(state_combination_t<TopState> const& target) {
+    auto do_enter = [&](auto& ... region){
+      (region->enter(target), ...);
+    };
+    std::apply(do_enter, regions_);
   }
 
 private:
@@ -320,7 +333,8 @@ public:
   bool dispatch(const Event_& event = {}) {
     bool reacted = active_state_configuration_.handle_event(event);
     auto target = compute_target_state_combination();
-    active_state_configuration_.execute_transition(target);
+    active_state_configuration_.exit(target);
+    active_state_configuration_.enter(target);
     return reacted;
   }
 
