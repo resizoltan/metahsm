@@ -251,16 +251,17 @@ public:
   }
 
   void exit(state_combination_t<TopState> const& target) {
-    if ((target & state_combination_recursive_v<State_>).any()
-        && (target & this->state().common.last_recursive & ~state_combination_v<State_>).none()) {
-      active_sub_state_ = std::monostate{};
-    }
-    else {
-      auto do_execute_transition = overload{
-        [&](auto& active_sub_state){ active_sub_state.exit(target); },
-        [](std::monostate) { }
-      };
-      std::visit(do_execute_transition, active_sub_state_);
+    if ((target & state_combination_recursive_v<State_>).any()) {
+      if ((target & this->state().common.last_recursive & ~state_combination_v<State_>).any()) {
+        auto do_execute_transition = overload{
+          [&](auto& active_sub_state){ active_sub_state.exit(target); },
+          [](std::monostate) { }
+        };
+        std::visit(do_execute_transition, active_sub_state_);
+      }
+      else {
+        active_sub_state_ = std::monostate{};
+      }
     }
   }
 
