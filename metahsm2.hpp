@@ -49,6 +49,20 @@ protected:
     return ok;
   }
 
+  template <typename TargetState_, typename SourceState_>
+  bool transition(void(SourceState_::*transition_action)()) {
+
+    if(&context<SourceState_>() != this) {
+      return false;
+    }
+    auto state = static_cast<SourceState_*>(this);
+    bool ok = transition<TargetState_>();
+    if(ok) {
+      transition_action_ = std::bind(transition_action, state);
+    }
+    return ok;
+  }
+
   template <typename State_>
   State_& context() {
     return state_machine_->template get_state<State_>();
