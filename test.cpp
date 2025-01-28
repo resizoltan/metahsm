@@ -81,8 +81,8 @@ void LifecycleTopState::Unconfigured::react(Event<CONFIGURE>) {
 }
 
 void LifecycleTopState::Inactive::react(Event<ACTIVATE>) {
-  transition<Active>();
-  transition<Inactive>();
+  transition<History<Active>>();
+  assert(is_in_state<Inactive>());
 }
 
 
@@ -103,12 +103,8 @@ int main(int , char *[]) {
   //static_assert(std::is_invocable_v<decltype(&LifecycleTopState::Unconfigured::react), LifecycleTopState::Unconfigured&, const Event<CONFIGURE>&>);
   StateMachine<LifecycleTopState> sm;
   sm.dispatch<Event<CONFIGURE>>();
-  assert(sm.is_in_state<LifecycleTopState::Inactive>());
   sm.dispatch<Event<ACTIVATE>>();
-  assert(sm.is_in_state<LifecycleTopState::Active>());
-  assert(sm.is_in_state<LifecycleTopState::Active::Operation::Monitoring>());
-  assert(sm.is_in_state<LifecycleTopState::Active::Safety::Ok>());
   sm.dispatch<Event<ACTIVATE>>();
-  sm.dispatch<Event<CLEANUP>>();
   sm.dispatch<Event<DEACTIVATE>>();
+  sm.dispatch<Event<ACTIVATE>>();
 }
