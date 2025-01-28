@@ -56,11 +56,7 @@ protected:
       return false;
     }
     auto state = static_cast<SourceState_*>(this);
-    bool ok = transition<TargetState_>();
-    if(ok) {
-      transition_action_ = std::bind(transition_action, state);
-    }
-    return ok;
+    return transition<TargetState_>(std::bind(transition_action, state));
   }
 
   template <typename State_>
