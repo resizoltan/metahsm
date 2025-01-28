@@ -352,6 +352,7 @@ public:
 
   template <typename Event_>
   bool dispatch(const Event_& event = {}) {
+    trace_event<Event_>();
     bool reacted = active_state_configuration_.handle_event(event);
     auto target = compute_target_state_combination();
     active_state_configuration_.exit(target);

@@ -22,10 +22,15 @@ const std::array<std::string_view, std::tuple_size_v<all_states_t<_TopStateDef>>
     return std::array{get_type_name<typename decltype(state)::type>()...};
 }, tuple_apply_t<type_identity, all_states_t<_TopStateDef>>{});
 
+template <typename Event_>
+void trace_event() {
+    std::cout << get_type_name<Event_>() << std::endl;
+}
+
 template <typename _StateDef>
 void trace_react(bool result, state_combination_t<typename _StateDef::TopState> & target) {
     std::string did_react = result ? "true" : "false";
-    std::cout << get_type_name<_StateDef>() << "::react: "  << did_react;
+    std::cout << "   " << get_type_name<_StateDef>() << "::react: "  << did_react;
     if(target.any()) {
         std::cout << ", target: {";
         bool first = true;
@@ -46,12 +51,12 @@ void trace_react(bool result, state_combination_t<typename _StateDef::TopState> 
 
 template <typename _StateDef>
 void trace_enter() {
-    std::cout << get_type_name<_StateDef>() << "::enter"  << std::endl;
+    std::cout << "   " << get_type_name<_StateDef>() << "::enter"  << std::endl;
 }
 
 template <typename _StateDef>
 void trace_exit() {
-    std::cout << get_type_name<_StateDef>() << "::exit"  << std::endl;
+    std::cout << "   " << get_type_name<_StateDef>() << "::exit"  << std::endl;
 }
 
 
