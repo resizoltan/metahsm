@@ -42,18 +42,6 @@ using as_tuple_t = typename as_tuple<_T>::type;
 template <typename ... _T>
 using tuple_join_t = decltype(std::tuple_cat(std::declval<as_tuple_t<_T>>()...));
 
-template <typename Tuple>
-struct as_ref_tuple;
-
-template <typename ... T>
-struct as_ref_tuple<std::tuple<T...>>
-{
-    using type = std::tuple<T&...>;
-};
-
-template <typename T>
-using as_ref_tuple_t = typename as_ref_tuple<T>::type;
-
 template <typename _T>
 struct to_variant;
 
@@ -65,27 +53,6 @@ struct to_variant<std::tuple<_T...>>
 
 template <typename _T>
 using to_variant_t = typename to_variant<_T>::type;
-
-template <typename _Default, typename ... _T>
-struct first_non_void
-{
-    using type = _Default;
-};
-
-template <typename _Default, typename ... _T>
-struct first_non_void<_Default, void, _T...>
-{
-    using type = typename first_non_void<_Default, _T...>::type;
-};
-
-template <typename _Default, typename _T, typename ... _Us>
-struct first_non_void<_Default, _T, _Us...>
-{
-    using type = _T;
-};
-
-template<typename _Default, typename ... T>
-using first_non_void_t = typename first_non_void<_Default, T...>::type;
 
 template <typename _T, typename _Tuple>
 struct index;

@@ -124,7 +124,7 @@ struct state_id
 };
 
 template <>
-struct state_id<RootState>
+struct state_id<void>
 {
     static constexpr std::size_t value = 0;
 };
@@ -161,9 +161,6 @@ const auto state_combination_v = state_combination(type_identity<_StateDef>{});
 template <typename _StateDef, typename _ContextDef>
 const bool is_in_context_recursive_v = (state_combination_v<_StateDef> & state_combination_recursive_v<_ContextDef>).any();
 
-template <typename _StateDef, typename _AllStateDefs>
-struct super_state;
-
 template <typename State1_, typename StateTuple_>
 struct any;
 
@@ -173,23 +170,37 @@ struct any<State1_, std::tuple<State_...>>
     static constexpr bool value = ((state_id_v<State1_> == state_id_v<State_>) || ...);
 };
 
+template <typename State_, typename SuperState_, typename OtherStates_>
+struct super_state_impl;
+
+template <typename State_, typename OtherStates_>
+struct super_state;
+
+template <typename State_, typename SuperState_, typename ... OtherState_>
+struct super_state_impl<State_, std::tuple<SuperState_>, std::tuple<OtherState_...>>
+{
+    using direct = SuperState_;
+    using recursive = tuple_join_t<direct, typename super_state<direct, std::tuple<OtherState_...>>::recursive>;
+};
+
+template <typename State_, typename ... OtherState_>
+struct super_state_impl<State_, std::tuple<>, std::tuple<OtherState_...>>
+{
+    using direct = void;
+    using recursive = std::tuple<>;
+};
+
 template <typename _StateDef, typename ... _OtherStateDef>
 struct super_state<_StateDef, std::tuple<_OtherStateDef...>>
 {
-    using direct = first_non_void_t<
-        RootState,
+    using impl = super_state_impl<_StateDef, tuple_strip_void_t<std::tuple<
         std::conditional_t<
            any<_StateDef, contained_states_direct_t<_OtherStateDef>>::value,
             _OtherStateDef,
             void>...
-        >;
-    using recursive = tuple_join_t<direct, typename super_state<direct, std::tuple<_OtherStateDef...>>::recursive>;
-};
-
-template <typename ... _OtherStateDef>
-struct super_state<RootState, std::tuple<_OtherStateDef...>>
-{
-    using recursive = std::tuple<>; 
+        >>, std::tuple<_OtherStateDef...>>;
+    using direct = typename impl::direct;
+    using recursive = typename impl::recursive;
 };
 
 template <typename _StateDef>
