@@ -29,13 +29,24 @@ public:
 
 protected:
 
-  template <typename State_>
-  void transition() {
+  template <typename TargetState_>
+  bool transition() {
     auto& current_target_branch = *static_cast<state_combination_t<TopState_>*>(target_state_combination_branch_p_);
-    auto new_target_branch = state_combination_v<tuple_join_t<State_, super_state_recursive_t<State_>>>;
+    auto new_target_branch = state_combination_v<tuple_join_t<TargetState_, super_state_recursive_t<TargetState_>>>;
     if(merge_if_valid<TopState>(current_target_branch, new_target_branch)) {
-      *static_cast<state_combination_t<TopState_>*>(target_state_combination_p_) |= state_combination_v<State_>;
+      *static_cast<state_combination_t<TopState_>*>(target_state_combination_p_) |= state_combination_v<TargetState_>;
+      return true;
     }
+    return false;
+  }
+
+  template <typename TargetState_, typename Callable_>
+  bool transition(Callable_ const& transition_action) {
+    bool ok = transition<TargetState_>();
+    if(ok) {
+      transition_action_ = transition_action;
+    }
+    return ok;
   }
 
   template <typename State_>
@@ -53,6 +64,7 @@ protected:
   StateMachine<TopState_> * state_machine_;
   void * target_state_combination_branch_p_;
   void * target_state_combination_p_;
+  std::optional<std::function<void()>> transition_action_;
 };
 }
 
@@ -84,6 +96,10 @@ public:
 
   auto& requested() {
     return target_state_combination_;
+  }
+
+  auto& action() {
+    return this->transition_action_;
   }
 
 private:
@@ -334,6 +350,7 @@ public:
     bool reacted = active_state_configuration_.handle_event(event);
     auto target = compute_target_state_combination();
     active_state_configuration_.exit(target);
+    execute_actions();
     active_state_configuration_.enter(target);
     return reacted;
   }
@@ -343,16 +360,33 @@ public:
     return std::get<StateMixin<State_>>(all_states_);
   }
 
-  
-
   auto compute_target_state_combination() {
     auto find = [&](auto& ... state) {
       state_combination_t<TopState_> target{};
-      (merge_if_valid<TopState_>(target, state.target()), ...);
+      auto resolve_conflicts = [&](auto& s) {
+        if(!merge_if_valid<TopState_>(target, s.target())) {
+          s.action().reset();
+        }
+      };
+      (resolve_conflicts(state), ...);
       ((state.target() = {}), ...);
       return target;
     };
     return std::apply(find, all_states_);
+  }
+
+  void execute_actions() {
+    auto exec_all = [&](auto &... state) {
+      auto exec = [&](auto & s) {
+        auto& action = s.action();
+        if(action) {
+          std::invoke(*action);
+        }
+        action.reset();
+      };
+      (exec(state), ...);
+    };
+    std::apply(exec_all, all_states_);
   }
 
 private:

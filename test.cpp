@@ -30,7 +30,9 @@ struct LifecycleTopState : State<LifecycleTopState>
 
   struct Active : State
   {
-    inline void react(Event<DEACTIVATE>) { transition<Inactive>(); }
+    inline void react(Event<DEACTIVATE>) {
+      transition<Inactive>();
+    }
     int i = 0;
 
     struct Operation : State
@@ -43,8 +45,8 @@ struct LifecycleTopState : State<LifecycleTopState>
       struct Commanding : State
       {
         inline void react(Event<CLEANUP>) { 
-          transition<Monitoring>();
-          transition<Safety::Error>();
+          transition<Monitoring>([this](){ std::cout << "Action1!" << std::endl; });
+          transition<Safety::Error>([this](){ std::cout << "Action2!" << std::endl; });
         }
       };
       using SubStates = std::tuple<Monitoring, Commanding>;
@@ -69,7 +71,7 @@ struct LifecycleTopState : State<LifecycleTopState>
 };
 
 void LifecycleTopState::Unconfigured::react(Event<CONFIGURE>) {
-  transition<Inactive>();
+  transition<Inactive>([this](){ std::cout << "Action!" << std::endl; });
   auto& active_context = context<Active>();
   active_context.i = 1;
 }
