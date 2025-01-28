@@ -22,12 +22,10 @@ struct LifecycleTopState : State<LifecycleTopState>
   {
     void react(Event<CONFIGURE>); // -> Inactive
   };
-
   struct Inactive : State
   {
     void react(Event<ACTIVATE>); // -> Active
   };
-
   struct Active : State
   {
     inline void react(Event<DEACTIVATE>) {
@@ -37,8 +35,7 @@ struct LifecycleTopState : State<LifecycleTopState>
     inline void react(Event<CONFIGURE>) { }
     inline void react(Event<CLEANUP>) { }
     int i = 0;
-
-    struct Operation : State
+    struct Operation : Region
     {
       struct Monitoring : State
       {
@@ -48,7 +45,6 @@ struct LifecycleTopState : State<LifecycleTopState>
         }
         inline void action() { std::cout << "Action!" << std::endl; }
       };
-
       struct Commanding : State
       {
         inline void react(Event<CLEANUP>) { 
@@ -60,8 +56,7 @@ struct LifecycleTopState : State<LifecycleTopState>
       };
       using SubStates = std::tuple<Monitoring, Commanding>;
     };
-
-    struct Safety : State
+    struct Safety : Region
     {
       struct Ok : State
       {
@@ -70,17 +65,12 @@ struct LifecycleTopState : State<LifecycleTopState>
           transition_action([this](){ std::cout << "Action3!" << std::endl; });
         }
       };
-
       struct Error : State
       { };
-
       using SubStates = std::tuple<Ok, Error>;
     };
-
     using Regions = std::tuple<Operation, Safety>;
-    
   };
-
   using SubStates = std::tuple<Unconfigured, Inactive, Active>;
 };
 
@@ -113,7 +103,11 @@ int main(int , char *[]) {
   //static_assert(std::is_invocable_v<decltype(&LifecycleTopState::Unconfigured::react), LifecycleTopState::Unconfigured&, const Event<CONFIGURE>&>);
   StateMachine<LifecycleTopState> sm;
   sm.dispatch<Event<CONFIGURE>>();
+  assert(sm.is_in_state<LifecycleTopState::Inactive>());
   sm.dispatch<Event<ACTIVATE>>();
+  assert(sm.is_in_state<LifecycleTopState::Active>());
+  assert(sm.is_in_state<LifecycleTopState::Active::Operation::Monitoring>());
+  assert(sm.is_in_state<LifecycleTopState::Active::Safety::Ok>());
   sm.dispatch<Event<ACTIVATE>>();
   sm.dispatch<Event<CLEANUP>>();
   sm.dispatch<Event<DEACTIVATE>>();

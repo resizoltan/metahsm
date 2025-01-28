@@ -44,6 +44,7 @@ class StateImpl_ : public StateBase
 {
 public:
   using State = StateImpl_<TopState_>;
+  using Region = State;
   using TopState = TopState_;
 
 protected:
@@ -84,6 +85,7 @@ protected:
   void on_exit() {}
 
 private:
+  // we use friend class instead of crtp to simplify API
   friend class StateMixinCommon<TopState>;
   StateMixinCommon<TopState_> * mixin_;
 };
@@ -91,6 +93,9 @@ private:
 
 template <typename TopState_>
 using State = detail::StateImpl_<TopState_>;
+
+template <typename TopState_>
+using Region = State<TopState_>;
 
 template <typename State_>
 struct StateMixin : public State_
@@ -314,7 +319,7 @@ private:
     std::apply(step1, regions_);
     
     auto step2 = [&](auto& ... region){
-      this->state().common.last_recursive = (region->state().common.last_recursive | ...);
+      this->state().common.last_recursive = state_combination_v<State_> | (region->state().common.last_recursive | ...);
     };
     std::apply(step2, regions_);
   }
@@ -364,6 +369,15 @@ public:
     return std::get<StateMixin<State_>>(all_states_);
   }
 
+  template <typename State_>
+  bool is_in_state() {
+    return (active_state_configuration_.state().common.last_recursive & state_combination_v<State_>).any();
+  }
+
+private:
+  StateMixins all_states_;
+  wrapper_t<TopState_> active_state_configuration_;
+  
   auto compute_target_state_combination() {
     auto find = [&](auto& ... state) {
       state_combination_t<TopState_> target{};
@@ -392,10 +406,6 @@ public:
     };
     std::apply(exec_all, all_states_);
   }
-
-private:
-  StateMixins all_states_;
-  wrapper_t<TopState_> active_state_configuration_;
 };
 
 
