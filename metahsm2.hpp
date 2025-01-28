@@ -88,7 +88,7 @@ public:
 
 private:
   state_combination_t<TopState> target_state_combination_branch_;
-  state_combination_t<TopState> target_state_combination_;
+  state_combination_t<TopState> target_state_combination_; // for cleaner logging
 };
 
 template <typename State_>
@@ -321,6 +321,8 @@ public:
   auto& get_state() {
     return std::get<StateMixin<State_>>(all_states_);
   }
+
+  
 
   auto compute_target_state_combination() {
     auto find = [&](auto& ... state) {

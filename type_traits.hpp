@@ -319,15 +319,51 @@ bool is_legal_state_combination_old(std::size_t state_combination) {
     return std::apply(is_legal_for_states, type_identity_tuple<all_states_t<_TopState>>{});
 }
 
+template <typename State_>
+struct is_orthogonal_class
+{
+    static constexpr bool value = std::is_same_v<base_t<State_>, OrthogonalStateBase>;
+};
+
+template <typename States_>
+using orthogonal_states_t = tuple_filter_t<is_orthogonal_class, States_>;
+
+template <typename OrthogonalStates_>
+struct all_regions;
+
+template <typename ... OrthogonalState_>
+struct all_regions<std::tuple<OrthogonalState_...>>
+{
+    using type = tuple_join_t<typename OrthogonalState_::Regions ...>;
+};
+
+template <typename TopState_>
+using all_regions_t = tuple_join_t<TopState_, typename all_regions<orthogonal_states_t<all_states_t<TopState_>>>::type>;
+
+template <typename TopState_>
+const std::array<state_combination_t<TopState_>, std::tuple_size_v<all_regions_t<TopState_>>> region_masks_ = std::apply([](auto ... region_id) {
+    const std::size_t N = sizeof...(region_id);
+    std::array<state_combination_t<TopState_>, N> masks{state_combination_recursive_v<typename decltype(region_id)::type>...};
+    for(int i = 0; i < N; i++) {
+      for(int j = i + 1; j < N; j++) {
+        masks[i] &= ~masks[j];
+      }
+    }
+    return masks;
+}, type_identity_tuple<all_regions_t<TopState_>>{});
+
+
+
 template <typename TopState_>
 bool merge_if_valid(state_combination_t<TopState_> & c1, state_combination_t<TopState_> const& c2) {
-    if((c1 & ~c2).none() || (c2 & ~c1).none()) {
+    const auto& masks = region_masks_<TopState_>;
+    bool valid = std::all_of(masks.begin(), masks.end(), [&](auto& mask) {
+        return ((c1 & ~c2) & mask).none() || ((c2 & ~c1) & mask).none();
+    });
+    if(valid) {
         c1 |= c2;
-        return true;
     }
-    else {
-        return false;
-    }
+    return valid;
 }
 
 }

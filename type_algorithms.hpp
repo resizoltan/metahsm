@@ -118,5 +118,37 @@ struct tuple_apply<_F, std::tuple<_T...>>
 template <template <typename> typename _F, typename _Tuple>
 using tuple_apply_t = typename tuple_apply<_F, _Tuple>::type;
 
+template <typename _Tuple>
+struct tuple_strip_void;
+
+template <typename _Tuple>
+using tuple_strip_void_t = typename tuple_strip_void<_Tuple>::type;
+
+template <typename _T1, typename ... _T>
+struct tuple_strip_void<std::tuple<_T1, _T...>>
+{
+    using rest = tuple_strip_void_t<std::tuple<_T...>>;
+    using type = std::conditional_t<std::is_same_v<_T1, void>, rest, tuple_join_t<_T1, rest>>;
+};
+
+template <>
+struct tuple_strip_void<std::tuple<>>
+{
+    using type = std::tuple<>;
+};
+
+template <template <typename> typename _F, typename _Tuple>
+struct tuple_filter;
+
+template <template <typename> typename _F, typename ... _T>
+struct tuple_filter<_F, std::tuple<_T...>>
+{
+    using type = tuple_strip_void_t<std::tuple<std::conditional_t<_F<_T>::value, _T, void>...>>;
+};
+
+template <template <typename> typename _F, typename _Tuple>
+using tuple_filter_t = typename tuple_filter<_F, _Tuple>::type;
+
+
 
 }
