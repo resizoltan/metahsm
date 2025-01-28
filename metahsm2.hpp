@@ -187,8 +187,15 @@ public:
   }
 
   void execute_transition(state_combination_t<TopState> const& target) {
-    if ((target & this->active_state_combination_).none()) {
+    if ((target & this->active_state_combination_ & ~state_combination_v<State_>).none()) {
       change_state(target, type_identity<SubStates>{});
+    }
+    else {
+      auto do_execute_transition = overload{
+        [&](auto& active_sub_state){ active_sub_state.execute_transition(target); },
+        [](std::monostate) { }
+      };
+      std::visit(do_execute_transition, active_sub_state_);
     }
   }
 
@@ -216,7 +223,7 @@ private:
       [&](auto& substate){ return substate.active_state_combination_; },
       [](std::monostate){ return state_combination_t<TopState>{}; }
     };
-    this->active_state_combination_ = std::visit(updater, active_sub_state_);
+    this->active_state_combination_ = state_combination_v<State_> | std::visit(updater, active_sub_state_);
   }
 
 };

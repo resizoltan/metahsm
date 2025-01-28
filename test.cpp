@@ -35,7 +35,7 @@ struct LifecycleTopState : State<LifecycleTopState>
 
     struct Monitoring : State
     {
-
+      inline void react(Event<ACTIVATE>) { transition<Commanding>(); }
     };
 
     struct Commanding : State
@@ -43,7 +43,7 @@ struct LifecycleTopState : State<LifecycleTopState>
 
     };
     
-    using Regions = std::tuple<Monitoring, Commanding>;
+    using SubStates = std::tuple<Monitoring, Commanding>;
   };
 
   using SubStates = std::tuple<Unconfigured, Inactive, Active>;
@@ -56,7 +56,7 @@ void LifecycleTopState::Unconfigured::react(Event<CONFIGURE>) {
 }
 
 void LifecycleTopState::Inactive::react(Event<ACTIVATE>) {
-  transition<Active::Commanding>();
+  transition<Active>();
   transition<Inactive>();
 }
 
@@ -78,6 +78,7 @@ int main(int , char *[]) {
   //static_assert(std::is_invocable_v<decltype(&LifecycleTopState::Unconfigured::react), LifecycleTopState::Unconfigured&, const Event<CONFIGURE>&>);
   StateMachine<LifecycleTopState> sm;
   sm.dispatch<Event<CONFIGURE>>();
+  sm.dispatch<Event<ACTIVATE>>();
   sm.dispatch<Event<ACTIVATE>>();
   sm.dispatch<Event<DEACTIVATE>>();
 }
