@@ -34,7 +34,7 @@ struct LifecycleTopState : State<LifecycleTopState>
     inline void react(Event<ACTIVATE>) { }
     inline void react(Event<CONFIGURE>) { }
     inline void react(Event<CLEANUP>) { }
-    int i = 1;
+    int i = 0;
     struct Operation : Region
     {
       struct Monitoring : State
@@ -160,11 +160,11 @@ int main(int , char *[]) {
   //static_assert(std::is_invocable_v<decltype(&LifecycleTopState::Unconfigured::react), LifecycleTopState::Unconfigured&, const Event<CONFIGURE>&>);
   StateMachine<LifecycleTopState> sm;
   sm.dispatch<Event<CONFIGURE>>();
-  /*sm.dispatch<Event<ACTIVATE>>();
   sm.dispatch<Event<ACTIVATE>>();
-  sm.dispatch<Event<DEACTIVATE>>();
   sm.dispatch<Event<ACTIVATE>>();
-  static_assert(!std::is_void_v<TLC<TLCConfig2>::Conf::TopState>);
+  sm.dispatch<Event<CLEANUP>>();
+  sm.dispatch<Event<ACTIVATE>>();
+ /*static_assert(!std::is_void_v<TLC<TLCConfig2>::Conf::TopState>);
   ass<typename SimpleStateWrapper<TLC<TLCConfig2>::Unconfigured>::TopState, TLC2TopState>();
 
   StateMachine<TLC<TLCConfig1>> smt1;

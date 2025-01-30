@@ -31,11 +31,11 @@ template <typename State_>
 void trace_react(bool result, state_combination_t<top_state_t<State_>> & target) {
     std::string did_react = result ? "true" : "false";
     std::cout << "   " << get_type_name<State_>() << "::react: "  << did_react;
-    if(target.any()) {
+    if(target) {
         std::cout << ", target: {";
         bool first = true;
         for(std::size_t state_id = 0; state_id < std::tuple_size_v<all_states_t<top_state_t<State_>>>; state_id++) {
-            if(target.test(state_id)) {
+            if(target & (std::size_t{1} << state_id)) {
                 if (first) { first = false; }
                 else { std::cout << ","; }
                 std::cout << state_names<top_state_t<State_>>.at(state_id);

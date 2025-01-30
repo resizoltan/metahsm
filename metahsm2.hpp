@@ -5,6 +5,8 @@
 #include <variant>
 #include <functional>
 #include <optional>
+#include <random>
+#include <cmath>
 
 #include "type_traits.hpp"
 #include "trace.hpp"
@@ -170,8 +172,9 @@ struct StateMixinCommon : StateMixinBase
   bool transition(sc_t const& history = {}) {
     sc_t new_target = state_combination_v<TargetState_>;
     sc_t new_target_branch = new_target | history | state_combination_v<super_state_recursive_t<TargetState_>>;
-    bool valid = merge_if_valid<TopState_>(target_branch, new_target_branch);
+    bool valid = is_valid<TopState_>(target_branch, new_target_branch);
     if(valid) {
+      target_branch |= new_target_branch;
       target |= new_target;
     }
     return valid;
@@ -290,14 +293,13 @@ public:
   using SubStates = typename State_::SubStates;
   using SubStateWrappers = tuple_apply_t<wrapper_t, SubStates>;
   using typename StateWrapper<State_>::StateMachine;
+  using LookupTable = std::array<void(CompositeStateWrapper<State_>::*)(state_combination_t<TopState> const&), std::tuple_size_v<SubStates>>;
 
   CompositeStateWrapper(WrapperArgs<State_> args)
   : StateWrapper<State_>(args.state),
     state_machine_{args.state_machine}
   {
-    if(!change_state(args.target, type_identity<SubStates>{})) {
-      change_state<initial_state_t<State_>>(args.target);
-    }
+    enter(args.target);
   }
 
   template <typename Event_>
@@ -311,8 +313,8 @@ public:
   }
 
   void exit(state_combination_t<TopState> const& target) {
-    if ((target & state_combination_recursive_v<State_>).any()) {
-      if ((target & this->state().common.last_recursive & ~state_combination_v<State_>).any()) {
+    if ((target & state_combination_recursive_v<State_>)) {
+      if ((target & this->state().common.last_recursive & ~state_combination_v<State_>)) {
         auto do_execute_transition = overload{
           [&](auto& active_sub_state){ active_sub_state.exit(target); },
           [](std::monostate) { }
@@ -328,7 +330,17 @@ public:
   void enter(state_combination_t<TopState> const& target) {
     auto do_execute_transition = overload{
       [&](auto& active_sub_state){ active_sub_state.enter(target); },
-      [&](std::monostate) { this->change_state(target, type_identity<SubStates>{}); }
+      [&](std::monostate) {
+        std::size_t state_id_to_enter;
+        if (target & state_combination_v<SubStates>) {
+          state_id_to_enter = bit_index(target & state_combination_v<SubStates>);
+        }
+        else {
+          state_id_to_enter = state_id_v<initial_state_t<State_>>;
+        }
+        std::size_t local_id = state_id_to_enter - state_id_v<std::tuple_element_t<0, SubStates>>;
+        std::invoke(lookup_table_[local_id], this, target);
+      }
     };
     std::visit(do_execute_transition, active_sub_state_);
   }
@@ -337,17 +349,11 @@ private:
   StateMachine& state_machine_;
   to_variant_t<tuple_join_t<std::monostate, SubStateWrappers>> active_sub_state_;
 
-  template <typename ... SubState>
-  bool change_state(state_combination_t<TopState> const& target, type_identity<std::tuple<SubState...>>) {
-    bool changed = ((
-      (state_combination_recursive_v<SubState> & target).any() ? 
-        (
-          change_state<SubState>(target),
-          true
-        ) : false
-    ) || ...);
-    return changed;
+  template <typename ... SubState_>
+  static constexpr LookupTable make_lookup_table(type_identity<std::tuple<SubState_ ...>>) {
+    return {&CompositeStateWrapper<State_>::change_state<SubState_>...};
   }
+  static constexpr LookupTable lookup_table_ = make_lookup_table(type_identity<SubStates>{});
 
   template <typename SubState_>
   void change_state(state_combination_t<TopState> const& target) {
@@ -476,7 +482,7 @@ public:
 
   template <typename State_>
   bool is_in_state() {
-    return (active_state_configuration_.state().common.last_recursive & state_combination_v<State_>).any();
+    return (active_state_configuration_.state().common.last_recursive & state_combination_v<State_>);
   }
 
 private:
@@ -485,15 +491,19 @@ private:
   
   auto compute_target_state_combination() {
     auto find = [&](auto& ... state) {
-      state_combination_t<TopState_> target{};
+      state_combination_t<TopState_> target = 0;
       auto resolve_conflicts = [&](auto& s) {
-        if(!merge_if_valid<TopState_>(target, s.common.target_branch)) {
+        if(is_valid<TopState_>(target, s.common.target_branch)) {
+          return target | s.common.target_branch;
+        }
+        else {
           s.common.action.reset();
+          return target;
         }
       };
-      (resolve_conflicts(state), ...);
-      ((state.common.target_branch = {}), ...);
-      ((state.common.target = {}), ...);
+      ((target = resolve_conflicts(state)), ...);
+      ((state.common.target_branch = 0), ...);
+      ((state.common.target = 0), ...);
       return target;
     };
     return std::apply(find, all_states_);

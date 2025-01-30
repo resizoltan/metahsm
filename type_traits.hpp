@@ -4,6 +4,7 @@
 #include <variant>
 #include <iostream>
 #include <bitset>
+#include <cstdint>
 
 #include "type_algorithms.hpp"
 
@@ -150,30 +151,32 @@ template <typename State_>
 constexpr std::size_t state_id_v = state_id<State_>::value;
 
 template <typename State_>
-using state_combination_t = std::bitset<std::tuple_size_v<all_states_t<top_state_t<State_>>>>;
-
+using state_combination_t = uint64_t; //std::bitset<std::tuple_size_v<all_states_t<top_state_t<State_>>>>;
+static_assert(sizeof(uint64_t) == 8);
 template <typename State_>
-auto state_combination(type_identity<State_>)
+constexpr auto state_combination(type_identity<State_>)
 {
-    state_combination_t<top_state_t<State_>> value;
-    value.set(state_id_v<State_>);
+    state_combination_t<top_state_t<State_>> value = (uint64_t{1} << state_id_v<State_>);
+    //value |= (1 << state_id_v<State_>);
     return value;
 };
 
 template <typename State1_, typename ... State_>
-auto state_combination(type_identity<std::tuple<State1_, State_...>>)
+constexpr auto state_combination(type_identity<std::tuple<State1_, State_...>>)
 {
-    state_combination_t<top_state_t<State1_>> value;
-    value.set(state_id_v<State1_>);
-    (value.set(state_id_v<State_>), ...);
-    return value;
+    if constexpr(sizeof...(State_) > 0) {
+        return (uint64_t{1} << state_id_v<State1_>) | ((uint64_t{1} << state_id_v<State_>) | ...);
+    }
+    else {
+        return (uint64_t{1} << state_id_v<State1_>);
+    }
 };
 
 template <typename State_>
-const auto state_combination_recursive_v = state_combination(type_identity<all_states_t<State_>>{});
+constexpr auto state_combination_recursive_v = state_combination(type_identity<all_states_t<State_>>{});
 
 template <typename State_>
-const auto state_combination_v = state_combination(type_identity<State_>{});
+constexpr auto state_combination_v = state_combination(type_identity<State_>{});
 
 template <typename State1_, typename StateTuple_>
 struct any;
@@ -307,30 +310,41 @@ struct all_regions<std::tuple<OrthogonalState_...>>
 template <typename TopState_>
 using all_regions_t = tuple_join_t<TopState_, typename all_regions<orthogonal_states_t<all_states_t<TopState_>>>::type>;
 
-template <typename TopState_>
-const std::array<state_combination_t<TopState_>, std::tuple_size_v<all_regions_t<TopState_>>> region_masks_ = std::apply([](auto ... region_id) {
-    const std::size_t N = sizeof...(region_id);
-    std::array<state_combination_t<TopState_>, N> masks{state_combination_recursive_v<typename decltype(region_id)::type>...};
-    for(int i = 0; i < N; i++) {
-      for(int j = i + 1; j < N; j++) {
-        masks[i] &= ~masks[j];
-      }
+template <typename Region_, typename RegionNext_, typename ... RegionRest_>
+constexpr auto region_mask(type_identity<std::tuple<RegionNext_, RegionRest_...>>)
+{
+    if constexpr(!std::is_same_v<Region_, RegionNext_>) {
+        return region_mask<Region_>(type_identity<std::tuple<RegionRest_...>>{});
     }
-    return masks;
-}, type_identity_tuple<all_regions_t<TopState_>>{});
+    if constexpr(sizeof...(RegionRest_) > 0) {
+        return state_combination_recursive_v<Region_>
+            & (~region_mask<RegionRest_>(type_identity<std::tuple<RegionRest_...>>{}) | ...);
+    }
+    else {
+        return state_combination_recursive_v<Region_>;
+    }
+};
 
+template <typename TopState_>
+using RegionMasks = std::array<std::size_t, std::tuple_size_v<all_regions_t<TopState_>>>;
+
+template <typename TopState_, typename ... Region_>
+constexpr RegionMasks<TopState_> region_masks(type_identity<std::tuple<Region_...>>)
+{
+    return {region_mask<Region_>(type_identity<std::tuple<Region_...>>{})...};
+};
+
+template <typename TopState_>
+constexpr RegionMasks<TopState_> region_masks_v 
+    = region_masks<TopState_>(type_identity<all_regions_t<TopState_>>{});
 
 
 template <typename TopState_>
-bool merge_if_valid(state_combination_t<TopState_> & c1, state_combination_t<TopState_> const& c2) {
-    const auto& masks = region_masks_<TopState_>;
-    bool valid = std::all_of(masks.begin(), masks.end(), [&](auto& mask) {
-        return ((c1 & ~c2) & mask).none() || ((c2 & ~c1) & mask).none();
+constexpr bool is_valid(state_combination_t<TopState_> const& c1, state_combination_t<TopState_> const& c2) {
+    constexpr auto& masks = region_masks_v<TopState_>;
+    return !c1 || !c2 || std::all_of(std::begin(masks), std::end(masks), [&](auto& mask) {
+        return !((c1 & ~c2) & mask) || !((c2 & ~c1) & mask);
     });
-    if(valid) {
-        c1 |= c2;
-    }
-    return valid;
 }
 
 }
