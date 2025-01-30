@@ -96,7 +96,6 @@ struct TLC : StateTemplate<TLC>, Config
   };
   using Inactive = typename Config::Inactive;
   using SubStates = std::tuple<Unconfigured, Inactive>;
-  
 };
 
 struct Inactive1;
@@ -106,9 +105,11 @@ struct TLCConfig1 : Config<TLCConfig1>
 };
 
 struct Inactive2;
+struct TLC2TopState;
 struct TLCConfig2 : Config<TLCConfig2>
 {
   using Inactive = Inactive2;
+  using TopState = TLC2TopState;
 };
 
 struct Inactive1 : State<TLC<TLCConfig1>>
@@ -116,7 +117,12 @@ struct Inactive1 : State<TLC<TLCConfig1>>
   inline void react(Event<ACTIVATE>) { };
 };
 
-struct Inactive2 : State<TLC<TLCConfig2>>
+struct TLC2TopState : State<TLC2TopState>
+{
+  using SubStates = std::tuple<TLC<TLCConfig2>>;
+};
+
+struct Inactive2 : State<TLC2TopState>
 {
   inline void react(Event<ACTIVATE>) { };
 };
@@ -133,6 +139,7 @@ void init(std::index_sequence<I...>) {
   //tuple_apply_t<StateMixin, all_states_t<LifecycleTopState>> states{(I, 1)...};
 }
 
+
 int main(int , char *[]) {
   //static_assert(std::is_invocable_v<decltype(&LifecycleTopState::Unconfigured::react), LifecycleTopState::Unconfigured&, const Event<CONFIGURE>&>);
   StateMachine<LifecycleTopState> sm;
@@ -141,14 +148,15 @@ int main(int , char *[]) {
   sm.dispatch<Event<ACTIVATE>>();
   sm.dispatch<Event<DEACTIVATE>>();
   sm.dispatch<Event<ACTIVATE>>();
-
+  static_assert(!std::is_void_v<TLC<TLCConfig2>::Conf::TopState>);
+  ass<typename SimpleStateWrapper<TLC<TLCConfig2>::Unconfigured>::TopState, TLC2TopState>();
 
   StateMachine<TLC<TLCConfig1>> smt1;
   smt1.dispatch<Event<CONFIGURE>>();
   smt1.dispatch<Event<ACTIVATE>>();
 
 
-  StateMachine<TLC<TLCConfig2>> smt2;
+  StateMachine<TLC2TopState> smt2;
   smt2.dispatch<Event<CONFIGURE>>();
   smt2.dispatch<Event<ACTIVATE>>();
 }
