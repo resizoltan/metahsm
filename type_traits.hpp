@@ -121,7 +121,7 @@ struct top_state {
     using type = 
         std::conditional_t<
             std::is_void_v<typename State_::Conf::TopState>,
-            typename State_::template TopState2<typename State_::Conf>,
+            typename State_::template TopStateTemplate<typename State_::Conf>,
             typename State_::Conf::TopState>;
 };
 
@@ -163,7 +163,7 @@ auto state_combination(type_identity<State_>)
 template <typename State1_, typename ... State_>
 auto state_combination(type_identity<std::tuple<State1_, State_...>>)
 {
-    state_combination_t<typename State1_::TopState> value;
+    state_combination_t<top_state_t<State1_>> value;
     value.set(state_id_v<State1_>);
     (value.set(state_id_v<State_>), ...);
     return value;

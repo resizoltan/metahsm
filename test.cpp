@@ -85,7 +85,41 @@ void LifecycleTopState::Inactive::react(Event<ACTIVATE>) {
   assert(is_in_state<Inactive>());
 }
 
+template <typename Config>
+struct TLC : StateTemplate<TLC>, Config
+{
+  struct Unconfigured : State, Config
+  {
+    inline void react(Event<CONFIGURE>) {
+      transition<Inactive>();
+    }
+  };
+  using Inactive = typename Config::Inactive;
+  using SubStates = std::tuple<Unconfigured, Inactive>;
+  
+};
 
+struct Inactive1;
+struct TLCConfig1 : Config<TLCConfig1>
+{
+  using Inactive = Inactive1;
+};
+
+struct Inactive2;
+struct TLCConfig2 : Config<TLCConfig2>
+{
+  using Inactive = Inactive2;
+};
+
+struct Inactive1 : State<TLC<TLCConfig1>>
+{
+  inline void react(Event<ACTIVATE>) { };
+};
+
+struct Inactive2 : State<TLC<TLCConfig2>>
+{
+  inline void react(Event<ACTIVATE>) { };
+};
 
 template <typename T1, typename T2>
 void ass() {
@@ -107,4 +141,14 @@ int main(int , char *[]) {
   sm.dispatch<Event<ACTIVATE>>();
   sm.dispatch<Event<DEACTIVATE>>();
   sm.dispatch<Event<ACTIVATE>>();
+
+
+  StateMachine<TLC<TLCConfig1>> smt1;
+  smt1.dispatch<Event<CONFIGURE>>();
+  smt1.dispatch<Event<ACTIVATE>>();
+
+
+  StateMachine<TLC<TLCConfig2>> smt2;
+  smt2.dispatch<Event<CONFIGURE>>();
+  smt2.dispatch<Event<ACTIVATE>>();
 }

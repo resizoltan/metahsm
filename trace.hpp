@@ -27,18 +27,18 @@ void trace_event() {
     std::cout << get_type_name<Event_>() << std::endl;
 }
 
-template <typename _StateDef>
-void trace_react(bool result, state_combination_t<typename _StateDef::TopState> & target) {
+template <typename State_>
+void trace_react(bool result, state_combination_t<top_state_t<State_>> & target) {
     std::string did_react = result ? "true" : "false";
-    std::cout << "   " << get_type_name<_StateDef>() << "::react: "  << did_react;
+    std::cout << "   " << get_type_name<State_>() << "::react: "  << did_react;
     if(target.any()) {
         std::cout << ", target: {";
         bool first = true;
-        for(std::size_t state_id = 0; state_id < std::tuple_size_v<all_states_t<typename _StateDef::TopState>>; state_id++) {
+        for(std::size_t state_id = 0; state_id < std::tuple_size_v<all_states_t<top_state_t<State_>>>; state_id++) {
             if(target.test(state_id)) {
                 if (first) { first = false; }
                 else { std::cout << ","; }
-                std::cout << state_names<typename _StateDef::TopState>.at(state_id);
+                std::cout << state_names<top_state_t<State_>>.at(state_id);
             }
         }
         std::cout << "}";

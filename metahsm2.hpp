@@ -113,6 +113,22 @@ struct StateImpl : public StateImplBase
   using Conf = void;
 };
 
+template <template <typename> typename TopStateTemplate_>
+struct StateTemplateImpl : public StateImplBase
+{
+  using State = StateTemplateImpl<TopStateTemplate_>;
+  using Region = State;
+  template <typename Config_>
+  using TopStateTemplate = TopStateTemplate_<Config_>;
+};
+
+template <typename Config_>
+struct Config
+{
+    using Conf = Config_;
+    using TopState = void;
+};
+
 struct StateMixinBase
 {
   void init(StateImplBase * state) {
@@ -171,6 +187,12 @@ using State = StateImpl<TopState_>;
 template <typename TopState_>
 using Region = State<TopState_>;
 
+template <template <typename> typename TopStateTemplate_>
+using StateTemplate = StateTemplateImpl<TopStateTemplate_>;
+
+template <template <typename> typename TopStateTemplate_>
+using RegionTemplate = StateTemplateImpl<TopStateTemplate_>;
+
 template <typename State_>
 struct StateMixin : public State_
 {
@@ -198,7 +220,7 @@ struct WrapperArgs
 template <typename State_>
 class StateWrapper {
 public:
-  using TopState = typename State_::TopState;
+  using TopState = top_state_t<State_>;
   using StateMachine = metahsm::StateMachine<TopState>;
 
   StateWrapper(StateMixin<State_>& state)
@@ -241,7 +263,7 @@ class SimpleStateWrapper : public StateWrapper<State_>
 {
 public:
   using typename StateWrapper<State_>::StateMachine;
-  using TopState = typename State_::TopState;
+  using TopState = top_state_t<State_>;
 
   SimpleStateWrapper(WrapperArgs<State_> args)
   : StateWrapper<State_>(args.state)
@@ -257,7 +279,7 @@ template <typename State_>
 class CompositeStateWrapper : public StateWrapper<State_>
 {
 public:
-  using TopState = typename State_::TopState;
+  using TopState = top_state_t<State_>;
   using SubStates = typename State_::SubStates;
   using SubStateWrappers = tuple_apply_t<wrapper_t, SubStates>;
   using typename StateWrapper<State_>::StateMachine;
@@ -334,7 +356,7 @@ template <typename State_>
 class OrthogonalStateWrapper : public StateWrapper<State_>
 {
 public:
-  using TopState = typename State_::TopState;
+  using TopState = top_state_t<State_>;
   using Regions = typename State_::Regions;
   // optional needed to control the order of constuction/destruction of tuple elements
   using RegionWrappers = tuple_apply_t<std::optional, tuple_apply_t<wrapper_t, Regions>>;
