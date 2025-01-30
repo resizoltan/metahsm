@@ -168,6 +168,31 @@ struct StateMixinCommon : StateMixinBase
     this->state_machine = state_machine;
   }
 
+  void post_react(bool result) {
+    if(result) {
+      if(target_branch) {
+        state_machine->add_target(&target_branch);
+      }
+      
+      if(this->action) {
+        state_machine->add_action(&this->action);
+      }
+    }
+    else {
+      target_branch = 0;
+      this->action.reset();
+    }
+    target = 0;
+  }
+
+  void add_target() {
+    state_machine->add_target(&target_branch);
+  }
+
+  void add_action() {
+    state_machine->add_action(&this->action);
+  }
+
   template <typename TargetState_>
   bool transition(sc_t const& history = {}) {
     sc_t new_target = state_combination_v<TargetState_>;
@@ -236,13 +261,13 @@ public:
   StateWrapper(StateMixin<State_>& state)
   : state_{state}
   {
-    trace_enter<State_>();
+    //traceenter<State_>();
     state_.on_entry();
   }
 
   ~StateWrapper()
   {
-    trace_exit<State_>();
+    //traceexit<State_>();
     state_.on_exit();
   }
 
@@ -256,7 +281,8 @@ public:
     else {
       result = this->state_.react(e);
     }
-    trace_react<State_>(result, state().common.target);
+    //tracereact<State_>(result, state().common.target);
+    state().common.post_react(result);
     return result; 
   }
 
@@ -454,8 +480,12 @@ public:
   static constexpr std::size_t N = std::tuple_size_v<States>;
 
   StateMachine()
-  : active_state_configuration_{WrapperArgs<TopState_>{get_state<TopState_>(), *this, {}}}
+  : active_state_configuration_{WrapperArgs<TopState_>{get_state<TopState_>(), *this, {}}},
+    targets_size_{0},
+    actions_size_{0}
   {
+    std::fill(targets_.begin(), targets_.end(), nullptr);
+    std::fill(actions_.begin(), actions_.end(), nullptr);
     auto init = [&](auto& ... state) {
       (state.init(this), ...);
     };
@@ -466,7 +496,7 @@ public:
 
   template <typename Event_>
   bool dispatch(const Event_& event = {}) {
-    trace_event<Event_>();
+    //traceevent<Event_>();
     bool reacted = active_state_configuration_.handle_event(event);
     auto target = compute_target_state_combination();
     active_state_configuration_.exit(target);
@@ -488,39 +518,41 @@ public:
 private:
   StateMixins all_states_;
   wrapper_t<TopState_> active_state_configuration_;
+  std::array<state_combination_t<TopState_>*, std::tuple_size_v<all_regions_t<TopState_>>> targets_;
+  std::size_t targets_size_;
+  std::array<std::optional<std::function<void()>>*, std::tuple_size_v<all_regions_t<TopState_>>> actions_;
+  std::size_t actions_size_;
+
+  friend class StateMixinCommon<TopState_>;
+
+  void add_target(state_combination_t<TopState_>* target) {
+    targets_[targets_size_] = target;
+    targets_size_++;
+  }
+
+  void add_action(std::optional<std::function<void()>>* action) {
+    actions_[actions_size_] = action;
+    actions_size_++;
+  }
   
   auto compute_target_state_combination() {
-    auto find = [&](auto& ... state) {
-      state_combination_t<TopState_> target = 0;
-      auto resolve_conflicts = [&](auto& s) {
-        if(is_valid<TopState_>(target, s.common.target_branch)) {
-          return target | s.common.target_branch;
-        }
-        else {
-          s.common.action.reset();
-          return target;
-        }
-      };
-      ((target = resolve_conflicts(state)), ...);
-      ((state.common.target_branch = 0), ...);
-      ((state.common.target = 0), ...);
-      return target;
-    };
-    return std::apply(find, all_states_);
+    state_combination_t<TopState_> target = 0;
+    for(std::size_t i = 0; i < targets_size_; i++) {
+      if(is_valid<TopState_>(target, *targets_[i])) {
+        target |= *targets_[i];
+      }
+      *targets_[i] = 0;
+    }
+    targets_size_ = 0;
+    return target;
   }
 
   void execute_actions() {
-    auto exec_all = [&](auto &... state) {
-      auto exec = [&](auto & s) {
-        auto& action = s.common.action;
-        if(action) {
-          std::invoke(*action);
-        }
-        action.reset();
-      };
-      (exec(state), ...);
-    };
-    std::apply(exec_all, all_states_);
+    for(std::size_t i = 0; i < actions_size_; i++) {
+      std::invoke(**actions_[i]);
+      actions_[i]->reset();
+    }
+    actions_size_ = 0;
   }
 };
 
