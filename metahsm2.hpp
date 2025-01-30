@@ -163,10 +163,7 @@ struct StateMixinCommon : StateMixinBase
   bool transition_deep() {
     return transition<TargetState_>(state_machine->template get_state<TargetState_>().common.last_recursive);
   }
-
 };
-
-
 
 template <typename TopState_>
 using State = StateImpl<TopState_>;
@@ -177,9 +174,9 @@ using Region = State<TopState_>;
 template <typename State_>
 struct StateMixin : public State_
 {
-  using typename State_::TopState;
+  using TopState = top_state_t<State_>;
   using State_::react;
-  using State<TopState>::react;
+  using StateImplBase::react;
   using State_::on_entry;
   using State_::on_exit;
 
