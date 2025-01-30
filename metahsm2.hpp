@@ -129,6 +129,13 @@ struct Config
     using TopState = void;
 };
 
+template <typename TopState_>
+struct TopStateRebind
+{
+  using Conf = TopStateRebind<TopState_>;
+  using TopState = TopState_;
+};
+
 struct StateMixinBase
 {
   void init(StateImplBase * state) {
@@ -486,6 +493,7 @@ private:
       };
       (resolve_conflicts(state), ...);
       ((state.common.target_branch = {}), ...);
+      ((state.common.target = {}), ...);
       return target;
     };
     return std::apply(find, all_states_);

@@ -6,12 +6,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED On)
 include(FetchContent)
 include(CTest)
 
-FetchContent_Declare(
-  Catch2
-  GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-  GIT_TAG        v3.4.0
-)
-FetchContent_MakeAvailable(Catch2)
+#FetchContent_Declare(
+#  Catch2
+#  GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+#  GIT_TAG        v3.4.0
+#)
+#FetchContent_MakeAvailable(Catch2)
 
 if(BUILD_TESTING)
     add_executable(tests test.cpp)

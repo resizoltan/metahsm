@@ -34,7 +34,7 @@ struct LifecycleTopState : State<LifecycleTopState>
     inline void react(Event<ACTIVATE>) { }
     inline void react(Event<CONFIGURE>) { }
     inline void react(Event<CLEANUP>) { }
-    int i = 0;
+    int i = 1;
     struct Operation : Region
     {
       struct Monitoring : State
@@ -103,6 +103,10 @@ struct TLCConfig1 : Config<TLCConfig1>
 {
   using Inactive = Inactive1;
 };
+struct Inactive1 : State<TLC<TLCConfig1>>
+{
+  inline void react(Event<ACTIVATE>) { };
+};
 
 struct Inactive2;
 struct TLC2TopState;
@@ -110,11 +114,6 @@ struct TLCConfig2 : Config<TLCConfig2>
 {
   using Inactive = Inactive2;
   using TopState = TLC2TopState;
-};
-
-struct Inactive1 : State<TLC<TLCConfig1>>
-{
-  inline void react(Event<ACTIVATE>) { };
 };
 
 struct TLC2TopState : State<TLC2TopState>
@@ -125,6 +124,23 @@ struct TLC2TopState : State<TLC2TopState>
 struct Inactive2 : State<TLC2TopState>
 {
   inline void react(Event<ACTIVATE>) { };
+};
+
+
+template <typename Config>
+struct TLC3 : StateTemplate<TLC3>, Config
+{
+  struct Unconfigured : State, Config
+  {
+    inline void react(Event<CONFIGURE>) {
+      transition<Unconfigured>();
+    }
+  };
+  using SubStates = std::tuple<Unconfigured>;
+};
+struct TLC3TopState : State<TLC3TopState>
+{
+  using Regions = std::tuple<TLC3<TopStateRebind<TLC3TopState>>>;
 };
 
 template <typename T1, typename T2>
@@ -144,7 +160,7 @@ int main(int , char *[]) {
   //static_assert(std::is_invocable_v<decltype(&LifecycleTopState::Unconfigured::react), LifecycleTopState::Unconfigured&, const Event<CONFIGURE>&>);
   StateMachine<LifecycleTopState> sm;
   sm.dispatch<Event<CONFIGURE>>();
-  sm.dispatch<Event<ACTIVATE>>();
+  /*sm.dispatch<Event<ACTIVATE>>();
   sm.dispatch<Event<ACTIVATE>>();
   sm.dispatch<Event<DEACTIVATE>>();
   sm.dispatch<Event<ACTIVATE>>();
@@ -159,4 +175,8 @@ int main(int , char *[]) {
   StateMachine<TLC2TopState> smt2;
   smt2.dispatch<Event<CONFIGURE>>();
   smt2.dispatch<Event<ACTIVATE>>();
+
+  StateMachine<TLC3TopState> smt3;
+  smt3.dispatch<Event<CONFIGURE>>();
+  smt3.dispatch<Event<ACTIVATE>>();*/
 }
