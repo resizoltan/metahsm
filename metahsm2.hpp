@@ -16,27 +16,8 @@ namespace metahsm {
 //=====================================================================================================//
 
 template <typename TopState_>
-struct StateMixinCommon;
-
-template <typename TopState_>
 class StateMachine;
-
-template <typename TopState_>
-struct StateMixinCommon
-{
-  StateMachine<TopState_> * state_machine;
-  state_combination_t<TopState_> target_branch;
-  state_combination_t<TopState_> target; // for cleaner logging
-  std::optional<std::function<void()>> action;
-  state_combination_t<TopState_> last;
-  state_combination_t<TopState_> last_recursive;
-
-  template <typename State_>
-  void init(State_ * state, StateMachine<TopState_> * state_machine) {
-    this->state_machine = state_machine;
-    state->mixin_ = this;
-  }
-};
+class StateImplBase;
 
 struct HistoryBase
 {};
@@ -59,49 +40,33 @@ struct History : HistoryBase
   };
 };
 
-namespace detail {
-
+struct StateMixinBase;
 template <typename TopState_>
-class StateImpl_ : public StateBase
+struct StateMixinCommon;
+
+class StateImplBase : StateBase
 {
 public:
-  using State = StateImpl_<TopState_>;
-  using Region = State;
-  using TopState = TopState_;
-
-protected:
-  template <typename TargetState_>
+  template <typename Target_>
   bool transition() {
-    auto& current_target_branch = mixin_->target_branch;
-    state_combination_t<TopState> new_target;
-    state_combination_t<TopState> new_target_branch;
-
-    if constexpr(std::is_base_of_v<HistoryBase, TargetState_>) {
-      using Target = typename TargetState_::State;
-      if constexpr(std::is_base_of_v<DeepHistoryBase, TargetState_>) {
-        new_target = state_combination_v<Target> |  mixin_->state_machine->template get_state<Target>().common.last_recursive;
+    if constexpr(std::is_base_of_v<HistoryBase, Target_>) {
+      using TargetState_ = typename Target_::State;
+      using TopState = top_state_t<TargetState_>;
+      if constexpr(std::is_base_of_v<DeepHistoryBase, Target_>) {
+        return mixin<TopState>().template transition_deep<TargetState_>();
       }
       else {
-        new_target = state_combination_v<Target> |  mixin_->state_machine->template get_state<Target>().common.last;
+        return mixin<TopState>().template transition_shallow<TargetState_>();
       }
-      new_target_branch = new_target | state_combination_v<super_state_recursive_t<Target>>;
     }
-    else {
-      new_target = state_combination_v<TargetState_>;
-      new_target_branch = new_target | state_combination_v<super_state_recursive_t<TargetState_>>;
+    else {       
+      using TopState = top_state_t<Target_>;
+      return mixin<TopState>().template transition<Target_>();
     }
-    bool valid = merge_if_valid<TopState>(current_target_branch, new_target_branch);
-    if(valid) {
-      mixin_->target |= new_target;
-    }
-    return valid;
   }
 
   template <typename Callable_>
-  bool transition_action(Callable_ const& action) {
-    mixin_->action = action;
-    return true;
-  }
+  bool transition_action(Callable_ const& action);
 
   template <typename SourceState_>
   bool transition_action(void(SourceState_::*action)()) {
@@ -114,12 +79,14 @@ protected:
 
   template <typename State_>
   State_& context() {
-    return mixin_->state_machine->template get_state<State_>();
+    using TopState = top_state_t<State_>;
+    return mixin<TopState>().state_machine->template get_state<State_>();
   }
 
   template <typename State_>
   bool is_in_state() {
-    return mixin_->state_machine->template is_in_state<State_>();
+    using TopState = top_state_t<State_>;
+    return mixin<TopState>().state_machine->template is_in_state<State_>();
   }
 
   template <typename Event_>
@@ -128,14 +95,81 @@ protected:
   void on_exit() {}
 
 private:
-  // we use friend class instead of crtp to simplify API
-  friend class StateMixinCommon<TopState>;
-  StateMixinCommon<TopState_> * mixin_;
+  template <typename TopState>
+  auto& mixin() {
+    return static_cast<StateMixinCommon<TopState>&>(*mixin_);
+  }
+
+  friend class StateMixinBase;
+  StateMixinBase * mixin_;
 };
+
+template <typename TopState_>
+struct StateImpl : public StateImplBase
+{
+  using State = StateImpl<TopState_>;
+  using Region = State;
+  using TopState = TopState_;
+  using Conf = void;
+};
+
+struct StateMixinBase
+{
+  void init(StateImplBase * state) {
+    state->mixin_ = this;
+  }
+  std::optional<std::function<void()>> action;
+};
+
+template <typename Callable_>
+bool StateImplBase::transition_action(Callable_ const& action) {
+  mixin_->action = action;
+  return true;
 }
 
 template <typename TopState_>
-using State = detail::StateImpl_<TopState_>;
+struct StateMixinCommon : StateMixinBase
+{
+  using sc_t = state_combination_t<TopState_>;
+  StateMachine<TopState_> * state_machine;
+  sc_t target_branch;
+  sc_t target; // for cleaner logging
+  sc_t last;
+  sc_t last_recursive;
+
+  template <typename State_>
+  void init(State_ * state, StateMachine<TopState_> * state_machine) {
+    StateMixinBase::init(state);
+    this->state_machine = state_machine;
+  }
+
+  template <typename TargetState_>
+  bool transition(sc_t const& history = {}) {
+    sc_t new_target = state_combination_v<TargetState_>;
+    sc_t new_target_branch = new_target | history | state_combination_v<super_state_recursive_t<TargetState_>>;
+    bool valid = merge_if_valid<TopState_>(target_branch, new_target_branch);
+    if(valid) {
+      target |= new_target;
+    }
+    return valid;
+  }
+
+  template <typename TargetState_>
+  bool transition_shallow() {
+    return transition<TargetState_>(state_machine->template get_state<TargetState_>().common.last);
+  }
+
+  template <typename TargetState_>
+  bool transition_deep() {
+    return transition<TargetState_>(state_machine->template get_state<TargetState_>().common.last_recursive);
+  }
+
+};
+
+
+
+template <typename TopState_>
+using State = StateImpl<TopState_>;
 
 template <typename TopState_>
 using Region = State<TopState_>;
@@ -153,15 +187,15 @@ struct StateMixin : public State_
     common.init(this, state_machine);
   }
 
-  StateMixinCommon<typename State_::TopState> common;
+  StateMixinCommon<top_state_t<State_>> common;
 };
 
 template <typename State_>
 struct WrapperArgs
 {
   StateMixin<State_> & state;
-  StateMachine<typename State_::TopState> & state_machine;
-  state_combination_t<typename State_::TopState> const& target;
+  StateMachine<top_state_t<State_>> & state_machine;
+  state_combination_t<top_state_t<State_>> const& target;
 };
 
 template <typename State_>

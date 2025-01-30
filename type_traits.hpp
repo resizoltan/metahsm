@@ -77,50 +77,67 @@ using base_t = std::conditional_t<
         typename base<has_substates_v<_Entity>, has_regions_v<_Entity>>::type>, 
     void>;
 
-template <typename _StateDef, typename _StateBase = void>
+template <typename State_, typename StateBase_ = void>
 struct contained_states;
 
-template <typename _StateDef>
-struct contained_states<_StateDef, SimpleStateBase>
+template <typename State_>
+struct contained_states<State_, SimpleStateBase>
 {
     using direct = std::tuple<>;
     using all = std::tuple<>;
 };
 
-template <typename _StateDef>
-struct contained_states<_StateDef, CompositeStateBase>
+template <typename State_>
+struct contained_states<State_, CompositeStateBase>
 {
-    using direct = typename _StateDef::SubStates;
+    using direct = typename State_::SubStates;
     using all = tuple_join_t<direct, typename contained_states<direct>::all>;
 };
 
-template <typename _StateDef>
-struct contained_states<_StateDef, OrthogonalStateBase>
+template <typename State_>
+struct contained_states<State_, OrthogonalStateBase>
 {
-    using direct = typename _StateDef::Regions;
+    using direct = typename State_::Regions;
     using all = tuple_join_t<direct, typename contained_states<direct>::all>;
 };
 
-template <typename ... _StateDef>
-struct contained_states<std::tuple<_StateDef...>, void>
+template <typename ... State_>
+struct contained_states<std::tuple<State_...>, void>
 {
-    using all = tuple_join_t<typename contained_states<_StateDef, base_t<_StateDef>>::all...>;
+    using all = tuple_join_t<typename contained_states<State_, base_t<State_>>::all...>;
 };
 
-template <typename _StateDef>
-using contained_states_direct_t = typename contained_states<_StateDef, base_t<_StateDef>>::direct;
+template <typename State_>
+using contained_states_direct_t = typename contained_states<State_, base_t<State_>>::direct;
 
-template <typename _StateDef>
-using contained_states_recursive_t = typename contained_states<_StateDef, base_t<_StateDef>>::all;
+template <typename State_>
+using contained_states_recursive_t = typename contained_states<State_, base_t<State_>>::all;
 
-template <typename _StateDef>
-using all_states_t = tuple_join_t<_StateDef, contained_states_recursive_t<_StateDef>>;
+template <typename State_>
+using all_states_t = tuple_join_t<State_, contained_states_recursive_t<State_>>;
 
+template <typename State_, typename Config_ = void>
+struct top_state {
+    using type = 
+        std::conditional_t<
+            std::is_void_v<typename State_::Conf::TopState>,
+            typename State_::template TopState2<typename State_::Conf>,
+            typename State_::Conf::TopState>;
+};
 
-template <typename _StateDef>
+template <typename State_>
+struct top_state<State_, void>
+{
+    using type = typename State_::TopState;
+};
+
+template <typename State_>
+using top_state_t = typename top_state<State_, typename State_::Conf>::type;
+
+template <typename State_>
 struct state_id
 {
-    static constexpr std::size_t value = index_v<_StateDef, all_states_t<typename _StateDef::TopState>>;
+    static constexpr std::size_t value = index_v<State_, all_states_t<top_state_t<State_>>>;
 };
 
 template <>
@@ -129,37 +146,34 @@ struct state_id<void>
     static constexpr std::size_t value = 0;
 };
 
-template <typename _StateDef>
-constexpr std::size_t state_id_v = state_id<_StateDef>::value;
+template <typename State_>
+constexpr std::size_t state_id_v = state_id<State_>::value;
 
-template <typename _State>
-using state_combination_t = std::bitset<std::tuple_size_v<all_states_t<typename _State::TopState>>>;
+template <typename State_>
+using state_combination_t = std::bitset<std::tuple_size_v<all_states_t<top_state_t<State_>>>>;
 
-template <typename _StateDef>
-auto state_combination(type_identity<_StateDef>)
+template <typename State_>
+auto state_combination(type_identity<State_>)
 {
-    state_combination_t<typename _StateDef::TopState> value;
-    value.set(state_id_v<_StateDef>);
+    state_combination_t<top_state_t<State_>> value;
+    value.set(state_id_v<State_>);
     return value;
 };
 
-template <typename _State1, typename ... _StateDef>
-auto state_combination(type_identity<std::tuple<_State1, _StateDef...>>)
+template <typename State1_, typename ... State_>
+auto state_combination(type_identity<std::tuple<State1_, State_...>>)
 {
-    state_combination_t<typename _State1::TopState> value;
-    value.set(state_id_v<_State1>);
-    (value.set(state_id_v<_StateDef>), ...);
+    state_combination_t<typename State1_::TopState> value;
+    value.set(state_id_v<State1_>);
+    (value.set(state_id_v<State_>), ...);
     return value;
 };
 
-template <typename _StateDef>
-const auto state_combination_recursive_v = state_combination(type_identity<all_states_t<_StateDef>>{});
+template <typename State_>
+const auto state_combination_recursive_v = state_combination(type_identity<all_states_t<State_>>{});
 
-template <typename _StateDef>
-const auto state_combination_v = state_combination(type_identity<_StateDef>{});
-
-template <typename _StateDef, typename _ContextDef>
-const bool is_in_context_recursive_v = (state_combination_v<_StateDef> & state_combination_recursive_v<_ContextDef>).any();
+template <typename State_>
+const auto state_combination_v = state_combination(type_identity<State_>{});
 
 template <typename State1_, typename StateTuple_>
 struct any;
@@ -190,74 +204,74 @@ struct super_state_impl<State_, std::tuple<>, std::tuple<OtherState_...>>
     using recursive = std::tuple<>;
 };
 
-template <typename _StateDef, typename ... _OtherStateDef>
-struct super_state<_StateDef, std::tuple<_OtherStateDef...>>
+template <typename State_, typename ... OtherState_>
+struct super_state<State_, std::tuple<OtherState_...>>
 {
-    using impl = super_state_impl<_StateDef, tuple_strip_void_t<std::tuple<
+    using impl = super_state_impl<State_, tuple_strip_void_t<std::tuple<
         std::conditional_t<
-           any<_StateDef, contained_states_direct_t<_OtherStateDef>>::value,
-            _OtherStateDef,
+           any<State_, contained_states_direct_t<OtherState_>>::value,
+            OtherState_,
             void>...
-        >>, std::tuple<_OtherStateDef...>>;
+        >>, std::tuple<OtherState_...>>;
     using direct = typename impl::direct;
     using recursive = typename impl::recursive;
 };
 
-template <typename _StateDef>
-using super_state_direct_t  = typename super_state<_StateDef, all_states_t<typename _StateDef::TopState>>::direct;
+template <typename State_>
+using super_state_direct_t  = typename super_state<State_, all_states_t<top_state_t<State_>>>::direct;
 
-template <typename _StateDef>
-using super_state_recursive_t  = typename super_state<_StateDef, all_states_t<typename _StateDef::TopState>>::recursive;
+template <typename State_>
+using super_state_recursive_t  = typename super_state<State_, all_states_t<top_state_t<State_>>>::recursive;
 
-template <typename _StateDef, typename _StateBase = base_t<_StateDef>>
+template <typename State_, typename StateBase_ = base_t<State_>>
 struct default_initial_state;
 
-template <typename _StateDef, bool has_initial = has_initial_v<_StateDef>>
+template <typename State_, bool has_initial = has_initial_v<State_>>
 struct initial_state
 {
-    using type = typename _StateDef::Initial;
+    using type = typename State_::Initial;
 };
 
-template <typename _StateDef>
-struct initial_state<_StateDef, false>
+template <typename State_>
+struct initial_state<State_, false>
 {
-    using type = typename default_initial_state<_StateDef>::type;
+    using type = typename default_initial_state<State_>::type;
 };
 
-template <typename _RegionDefs>
+template <typename Regions_>
 struct initial_states;
 
-template <typename ... _RegionDef>
-struct initial_states<std::tuple<_RegionDef...>>
+template <typename ... Region_>
+struct initial_states<std::tuple<Region_...>>
 {
-    using type = std::tuple<typename initial_state<_RegionDef>::type...>;
+    using type = std::tuple<typename initial_state<Region_>::type...>;
 };
 
-template <typename _StateDef>
-struct default_initial_state<_StateDef, CompositeStateBase>
+template <typename State_>
+struct default_initial_state<State_, CompositeStateBase>
 {
-    using type = std::tuple_element_t<0, typename _StateDef::SubStates>;
+    using type = std::tuple_element_t<0, typename State_::SubStates>;
 };
 
-template <typename _StateDef>
-struct default_initial_state<_StateDef, OrthogonalStateBase>
+template <typename State_>
+struct default_initial_state<State_, OrthogonalStateBase>
 {
-    using type = typename initial_states<typename _StateDef::Regions>::type;
+    using type = typename initial_states<typename State_::Regions>::type;
 };
 
-template <typename _StateDef>
-using initial_state_t = typename initial_state<_StateDef>::type;
+template <typename State_>
+using initial_state_t = typename initial_state<State_>::type;
 
-template <typename _StateDef>
+template <typename State_>
 class SimpleStateWrapper;
 
-template <typename _StateDef>
+template <typename State_>
 class CompositeStateWrapper;
 
-template <typename _StateDef>
+template <typename State_>
 class OrthogonalStateWrapper;
 
-template <typename State_, typename _StateBase = base_t<State_>>
+template <typename State_, typename StateBase_ = base_t<State_>>
 struct wrapper;
 
 template <typename State_>
