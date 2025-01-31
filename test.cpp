@@ -41,7 +41,7 @@ struct LifecycleTopState : State<LifecycleTopState>
       {
         inline void react(Event<ACTIVATE>) {
           transition<Commanding>();
-          transition_action(&action);
+          transition_action(&Monitoring::action);
         }
         inline void action() { std::cout << "Action!" << std::endl; }
       };

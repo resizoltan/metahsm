@@ -6,6 +6,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED On)
 include(FetchContent)
 include(CTest)
 
+add_compile_options(-ftime-trace -c)
+
 #FetchContent_Declare(
 #  Catch2
 #  GIT_REPOSITORY https://github.com/catchorg/Catch2.git
