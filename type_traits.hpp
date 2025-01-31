@@ -318,7 +318,7 @@ constexpr auto region_mask(type_identity<std::tuple<RegionNext_, RegionRest_...>
     }
     if constexpr(sizeof...(RegionRest_) > 0) {
         return state_combination_recursive_v<Region_>
-            & (~region_mask<RegionRest_>(type_identity<std::tuple<RegionRest_...>>{}) | ...);
+            & (~state_combination_recursive_v<RegionRest_> & ...);
     }
     else {
         return state_combination_recursive_v<Region_>;
