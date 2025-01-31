@@ -57,7 +57,7 @@ struct StateMixinBase;
 template <typename TopState_>
 struct StateMixinCommon;
 
-class StateImplBase : public StateBase
+class StateImplBase
 {
 public:
   // internal
@@ -152,8 +152,8 @@ public:
   using StateImplBase::react;
   using State_::on_entry;
   using State_::on_exit;
-  sc_t last;
-  sc_t last_recursive;
+  sc_t last{0};
+  sc_t last_recursive{0};
 };
 
 template <typename TopState_>
@@ -250,6 +250,12 @@ public:
   CompositeStateWrapper(WrapperArgs<State_> args)
   : StateWrapper<State_>(args)
   {
+    if (args.target & state_combination_v<SubStates>) {
+      next_state_id_ = bit_index(args.target & state_combination_v<SubStates>);
+    }
+    else {
+      next_state_id_ = state_id_v<initial_state_t<State_>>;
+    }
     enter(args.target);
   }
 
@@ -266,38 +272,35 @@ public:
   void exit(state_combination_t<TopState> const& target) {
     if ((target & state_combination_recursive_v<State_>)) {
       if ((target & this->state().last_recursive & ~state_combination_v<State_>)) {
-        auto do_execute_transition = overload{
-          [&](auto& active_sub_state){ active_sub_state.exit(target); },
-          [](std::monostate) { }
-        };
-        std::visit(do_execute_transition, active_sub_state_);
+        std::invoke(sub_exit, target);
       }
       else {
         active_sub_state_ = std::monostate{};
+        if (target & state_combination_v<SubStates>) {
+          next_state_id_ = bit_index(target & state_combination_v<SubStates>);
+        }
+        else {
+          next_state_id_ = state_id_v<initial_state_t<State_>>;
+        }
       }
     }
   }
 
   void enter(state_combination_t<TopState> const& target) {
-    auto do_execute_transition = overload{
-      [&](auto& active_sub_state){ active_sub_state.enter(target); },
-      [&](std::monostate) {
-        std::size_t state_id_to_enter;
-        if (target & state_combination_v<SubStates>) {
-          state_id_to_enter = bit_index(target & state_combination_v<SubStates>);
-        }
-        else {
-          state_id_to_enter = state_id_v<initial_state_t<State_>>;
-        }
-        std::size_t local_id = state_id_to_enter - state_id_v<std::tuple_element_t<0, SubStates>>;
-        std::invoke(lookup_table_[local_id], this, target);
-      }
-    };
-    std::visit(do_execute_transition, active_sub_state_);
+    if(next_state_id_) {
+      std::size_t local_id = next_state_id_ - state_id_v<std::tuple_element_t<0, SubStates>>;
+      std::invoke(lookup_table_[local_id], this, target);
+    }
+    else {
+      std::invoke(sub_enter, target);
+    }
   }
 
 private:  
   to_variant_t<tuple_join_t<std::monostate, SubStateWrappers>> active_sub_state_;
+  std::function<void(state_combination_t<TopState> const&)> sub_enter;
+  std::function<void(state_combination_t<TopState> const&)> sub_exit;
+  std::size_t next_state_id_;
 
   template <typename ... SubState_>
   static constexpr LookupTable make_lookup_table(type_identity<std::tuple<SubState_ ...>>) {
@@ -308,9 +311,12 @@ private:
   template <typename SubState_>
   void change_state(state_combination_t<TopState> const& target) {
     auto& sub_state = this->state_machine_.template get_state<SubState_>();
-    active_sub_state_.template emplace<wrapper_t<SubState_>>(WrapperArgs<SubState_>{sub_state, this->state_machine_, target});
+    auto sub_ = &active_sub_state_.template emplace<wrapper_t<SubState_>>(WrapperArgs<SubState_>{sub_state, this->state_machine_, target});
     this->state().last_recursive = state_combination_v<State_> | sub_state.last_recursive;
     this->state().last = state_combination_v<SubState_>;
+    sub_enter = [sub_](auto const& target) { sub_->enter(target); };
+    sub_exit = [sub_](auto const& target) { sub_->exit(target); };
+    next_state_id_ = 0;
   }
 
 };
