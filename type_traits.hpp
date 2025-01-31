@@ -17,6 +17,7 @@ struct CompositeStateBase : StateBase {};
 struct OrthogonalStateBase : StateBase {};
 struct TopStateBase {};
 struct RootState : StateBase {};
+struct StateImplBase;
 
 template <typename _Entity, typename _SFINAE = void>
 struct has_regions : std::false_type {};
@@ -58,7 +59,7 @@ template <>
 struct base<false, true> { using type = OrthogonalStateBase; };
 
 template <typename _Entity>
-constexpr bool is_state_v = std::is_base_of_v<StateBase, _Entity>;
+constexpr bool is_state_v = std::is_base_of_v<StateImplBase, _Entity>;
 
 template <typename _Entity>
 constexpr bool is_top_state_v = std::is_base_of_v<TopStateBase, _Entity>;
@@ -342,9 +343,9 @@ constexpr RegionMasks<TopState_> region_masks_v
 template <typename TopState_>
 constexpr bool is_valid(state_combination_t<TopState_> const& c1, state_combination_t<TopState_> const& c2) {
     constexpr auto& masks = region_masks_v<TopState_>;
-    return !c1 || !c2 || std::all_of(std::begin(masks), std::end(masks), [&](auto& mask) {
-        return !((c1 & ~c2) & mask) || !((c2 & ~c1) & mask);
-    });
+    return !c1 || !c2 || std::apply([&](auto& ... mask) {
+        return ((!((c1 & ~c2) & mask) || !((c2 & ~c1) & mask)) || ...);
+    }, masks);
 }
 
 }

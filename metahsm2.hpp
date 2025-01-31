@@ -60,6 +60,7 @@ struct StateMixinCommon;
 class StateImplBase : public StateBase
 {
 public:
+  // internal
   StateMachineBase & state_machine_;
 
   template <typename Target_>
@@ -102,6 +103,7 @@ public:
   void on_entry() {}
   void on_exit() {}
 
+private:
   template <typename TopState>
   auto& state_machine() {
     return static_cast<StateMachine<TopState>&>(state_machine_); // TODO rtti check
@@ -412,8 +414,8 @@ public:
   static constexpr std::size_t N = std::tuple_size_v<States>;
 
   StateMachine()
-  : active_state_configuration_{WrapperArgs<TopState_>{get_state<TopState_>(), *this, {}}},
-    all_states_{init_states(type_identity<States>{})},
+  : all_states_{init_states(type_identity<States>{})},
+    active_state_configuration_{WrapperArgs<TopState_>{get_state<TopState_>(), *this, {}}},
     target_branch_{0},
     target_{0}
   { }
