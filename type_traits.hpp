@@ -17,7 +17,7 @@ struct CompositeStateBase : StateBase {};
 struct OrthogonalStateBase : StateBase {};
 struct TopStateBase {};
 struct RootState : StateBase {};
-struct StateImplBase;
+class StateImplBase;
 
 template <typename _Entity, typename _SFINAE = void>
 struct has_regions : std::false_type {};

@@ -31,9 +31,6 @@ struct LifecycleTopState : State<LifecycleTopState>
     inline void react(Event<DEACTIVATE>) {
       transition<Inactive>();
     }
-    inline void react(Event<ACTIVATE>) { }
-    inline void react(Event<CONFIGURE>) { }
-    inline void react(Event<CLEANUP>) { }
     int i = 0;
     struct Operation : Region
     {

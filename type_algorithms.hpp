@@ -117,7 +117,7 @@ template <template <typename> typename _F, typename _Tuple>
 using tuple_filter_t = typename tuple_filter<_F, _Tuple>::type;
 
 std::size_t bit_index(std::size_t x) {
-    std::size_t n = 64; 
+    std::size_t n = 64;
     if ( (x>>32) != 0 ) { n=n-32; x = x>>32; } 
     if ( (x>>16) != 0 ) { n=n-16; x = x>>16; } 
     if ( (x>>8 ) != 0 ) { n=n- 8; x = x>> 8; } 
