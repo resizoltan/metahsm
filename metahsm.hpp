@@ -5,429 +5,596 @@
 #include <variant>
 #include <functional>
 #include <optional>
+#include <random>
+#include <cmath>
 
 #include "type_traits.hpp"
+#include "trace.hpp"
 
 namespace metahsm {
 
-template <typename _StateDef>
-class StateMixin;
+template <typename Callable_, typename Variant_, typename TI_, auto ... I>
+decltype(auto) visit(Callable_ && fun, Variant_ && v, std::integer_sequence<TI_, I...> const&) {
+    using res_t = std::invoke_result_t<Callable_, decltype(*std::get_if<0>(&v))>;
+    if constexpr(std::is_void_v<res_t>){
+        const int i = v.index();
+        ([&]{
+            if(i==I) {
+                fun(*std::get_if<I>(&v));
+                return true;
+            }
+            return false;
 
-enum HistoryType {
-    DEEP,
-    SHALLOW,
-    NONE
-};
+        }()||... );
+    }    
+    else {
+        const int i = v.index();
+        std::invoke_result_t<Callable_, decltype(*std::get_if<0>(&v))> res;
+        ([&]{
+            if(i==I) {
+                res = fun(*std::get_if<I>(&v));
+                return true;
+            }
+            return false;
 
-template <HistoryType type>
-struct HistoryBase
-{};
+        }()||... )
+        // should not reach here, but gcc complains
+        || (res = fun(*std::get_if<0>(&v)), true);
+        return res;
+    }
+}
+
+template <typename Callable_, typename Variant_>
+decltype(auto) visit(Callable_ && fun, Variant_ && v) {
+    return visit(std::forward<Callable_&&>(fun), std::forward<Variant_&&>(v), 
+        std::make_index_sequence<std::variant_size_v<std::remove_reference_t<Variant_>>>());
+}
 
 //=====================================================================================================//
 //                                     STATE TEMPLATE - USER API                                       //
 //=====================================================================================================//
 
-template <typename _StateDef, typename _TopStateDef>
-class StateCrtp : public StateBase
+class StateMachineBase
 {
 public:
-    using StateDef = _StateDef;
-    using TopStateDef = _TopStateDef;
-
-    template <typename _SubStateDef>
-    using State = StateCrtp<_SubStateDef, TopStateDef>;
-
-
-    template <typename _ContextDef>
-    decltype(auto) context()  {
-        //static_assert(is_in_context_recursive_v<_StateDef, _ContextDef>);
-        return this->mixin().template context<_ContextDef>();
-    }
-
-    template <typename _TargetStateDef>
-    auto transition() {
-        //(static_assert(is_in_context_recursive_v<_TargetStateDef, TopStateDef>),...);
-        this->mixin().template set_transition<_TargetStateDef>();
-    }
-
-private:
-    decltype(auto) mixin() {
-        return static_cast<StateMixin<_StateDef>&>(*this);
-    }
-
-    friend class StateMixin<_StateDef>;
-    static TopStateDef top_state_def();
-};
-
-template <typename _TargetStateDef, HistoryType type = SHALLOW>
-struct History : public HistoryBase<type>
-{
-    using TargetStateDef = _TargetStateDef;
-    static constexpr HistoryType TYPE = type;
-};
-
-//=====================================================================================================//
-//               STATE MIXINS & WRAPPERS - INTERNAL, IMPLEMENT STATE MACHINE BEHAVIOR                  //
-//=====================================================================================================//
-
-template <typename _TopStateDef>
-class StateMachine;
-
-template <typename _TopState>
-struct ReactionResult
-{
-    bool reacted{false};
-    std::size_t target_combination{0};
-};
-
-template <typename _TopState>
-auto operator,(ReactionResult<_TopState> lhs, ReactionResult<_TopState> rhs) {
-    std::size_t combined_target_combination = is_legal_state_combination<_TopState>(lhs.target_combination | rhs.target_combination) ?
-        lhs.target_combination | rhs.target_combination : lhs.target_combination;
-    return ReactionResult<_TopState>{lhs.reacted || rhs.reacted, combined_target_combination};
-}
-
-template <typename _StateDef>
-void trace_react(ReactionResult<typename _StateDef::TopStateDef> result);
-
-template <typename _StateDef>
-void trace_enter();
-
-template <typename _StateDef>
-void trace_exit();
-
-template <typename _StateDef>
-class StateMixin : public _StateDef
-{
-public:
-    using StateDef = _StateDef;
-    using TopStateDef = decltype(_StateDef::top_state_def());
-    using ContainedStates = mixins_t<contained_states_direct_t<_StateDef>>;
-    using _StateMachine = StateMachine<TopStateDef>;
-
-    StateMixin(_StateMachine& state_machine)
-    : state_machine_{state_machine}
-    {}
-
-    template <typename _Event>
-    auto handle_event(const _Event& e) {
-        reaction_result_ = {};
-        if constexpr(has_reaction_to_event_v<_StateDef, _Event>) {
-            reaction_result_.reacted = this->react(e);
-            trace_react<_StateDef>(reaction_result_);
-            if(!reaction_result_.reacted) {
-                reaction_result_ = {};
-            }
-        }
-        return reaction_result_;
-    }
-
-    template <typename _ContextDef>
-    auto& context() {
-        return state_machine_.template get_context<_ContextDef>();
-    }
-
-    template <typename _TargetStateDef>
-    void set_transition() {
-        if constexpr(std::is_base_of_v<HistoryBase<DEEP>, _TargetStateDef>) {
-            reaction_result_.target_combination = state_machine_.template get_deep_history<typename _TargetStateDef::TargetStateDef>()
-                | state_combination_v<typename _TargetStateDef::TargetStateDef>
-                | state_combination_v<super_state_recursive_t<typename _TargetStateDef::TargetStateDef>>;
-        }
-        else if constexpr(std::is_base_of_v<HistoryBase<SHALLOW>, _TargetStateDef>) {
-            reaction_result_.target_combination = state_machine_.template get_shallow_history<typename _TargetStateDef::TargetStateDef>()
-                | state_combination_v<typename _TargetStateDef::TargetStateDef>
-                | state_combination_v<super_state_recursive_t<typename _TargetStateDef::TargetStateDef>>;
-        }
-        else {
-            reaction_result_.target_combination = initial_state_combination_v<_TargetStateDef>
-                | state_combination_v<_TargetStateDef>
-                | state_combination_v<super_state_recursive_t<_TargetStateDef>>;
-        }
-    }
-
-    void set_current_state_combination(std::size_t state_combination) {
-        current_state_combination_ = state_combination;
-    }
-
-    std::size_t get_current_state_combination() {
-        return current_state_combination_;
-    }
+  template <typename Callable_>
+  void transition_action(Callable_ const& action) {
+    action_ = action;
+  }
 
 protected:
-    _StateMachine& state_machine_;
-    ReactionResult<TopStateDef> reaction_result_;
-    std::size_t current_state_combination_;
+  std::optional<std::function<void()>> action_;
+};
+template <typename TopState_>
+class StateMachine;
+class StateImplBase;
+
+struct HistoryBase
+{};
+
+struct DeepHistoryBase : HistoryBase
+{};
+
+template <typename State_>
+struct History : HistoryBase
+{
+  using State = State_;
+  struct Shallow : HistoryBase
+  {
+    using State = State_;
+  };
+
+  struct Deep : DeepHistoryBase
+  {
+    using State = State_;
+  };
 };
 
+struct StateMixinBase;
+template <typename TopState_>
+struct StateMixinCommon;
 
-template <>
-struct StateMixin<RootState>
+struct NOT_IMPLEMENTED
 {};
 
-template <typename _TopStateDef>
-class TopState : public StateCrtp<_TopStateDef, _TopStateDef> , public TopStateBase
-{};
+class StateImplBase
+{
+public:
+  // internal
+  StateMachineBase & state_machine_;
 
-template <typename _StateMixin>
+  template <typename Target_>
+  bool transition() {
+    if constexpr(std::is_base_of_v<HistoryBase, Target_>) {
+      return state_machine<top_state_t<typename Target_::State>>().template transition<Target_>();
+    }
+    else {
+      return state_machine<top_state_t<Target_>>().template transition<Target_>();
+    }
+  }
+
+  template <typename Callable_>
+  bool transition_action(Callable_ const& action)  {
+    state_machine_.transition_action(action);
+    return true;
+  }
+
+  template <typename SourceState_>
+  bool transition_action(void(SourceState_::*action)()) {
+    if(&context<SourceState_>() != this) {
+      return false;
+    }
+    auto state = static_cast<SourceState_*>(this);
+    return transition_action(std::bind(action, state));
+  }
+
+  template <typename State_>
+  State_& context() {
+    return state_machine<top_state_t<State_>>().template get_state<State_>();
+  }
+
+  template <typename State_>
+  bool is_in_state() {
+    return state_machine<top_state_t<State_>>().template is_in_state<State_>();
+  }
+
+  template <typename Event_>
+  NOT_IMPLEMENTED react(Event_ const&);
+  NOT_IMPLEMENTED on_entry();
+  NOT_IMPLEMENTED on_exit();
+
+private:
+  template <typename TopState>
+  auto& state_machine() {
+    return static_cast<StateMachine<TopState>&>(state_machine_); // TODO rtti check
+  }
+};
+
+template <typename TopState_>
+struct StateImpl : public StateImplBase
+{
+  using State = StateImpl<TopState_>;
+  using Region = State;
+  using TopState = TopState_;
+  using Conf = void;
+};
+
+template <template <typename> typename TopStateTemplate_>
+struct StateTemplateImpl : public StateImplBase
+{
+  using State = StateTemplateImpl<TopStateTemplate_>;
+  using Region = State;
+  template <typename Config_>
+  using TopStateTemplate = TopStateTemplate_<Config_>;
+};
+
+template <typename Config_>
+struct Config
+{
+    using Conf = Config_;
+    using TopState = void;
+};
+
+template <typename TopState_>
+struct TopStateRebind
+{
+  using Conf = TopStateRebind<TopState_>;
+  using TopState = TopState_;
+};
+
+template <typename State_>
+struct StateMixin : public State_
+{
+public:
+  using TopState = top_state_t<State_>;
+  using sc_t = state_combination_t<TopState>;
+  using State_::react;
+  template <typename Event_>
+  NOT_IMPLEMENTED react(Event_ const&);
+  using State_::on_entry;
+  using State_::on_exit;
+  sc_t last{0};
+  sc_t last_recursive{0};
+};
+
+template <typename TopState_>
+using State = StateImpl<TopState_>;
+
+template <typename TopState_>
+using Region = State<TopState_>;
+
+template <template <typename> typename TopStateTemplate_>
+using StateTemplate = StateTemplateImpl<TopStateTemplate_>;
+
+template <template <typename> typename TopStateTemplate_>
+using RegionTemplate = StateTemplateImpl<TopStateTemplate_>;
+
+
+template <typename State_>
+struct WrapperArgs
+{
+  StateMixin<State_> & state;
+  StateMachine<top_state_t<State_>> & state_machine;
+  state_combination_t<top_state_t<State_>> const& target;
+};
+
+template <typename State_>
 class StateWrapper {
 public:
-    using StateDef = typename _StateMixin::StateDef;
-    using TopStateDef = typename _StateMixin::TopStateDef;
-    using _StateMachine = StateMachine<TopStateDef>;
+  using TopState = top_state_t<State_>;
+  using StateMachine = metahsm::StateMachine<TopState>;
+  using State = State_;
+  using Mixin = StateMixin<State>;
+  template <typename Event_>
+  static constexpr bool has_react = !std::is_same_v<NOT_IMPLEMENTED, decltype(std::declval<Mixin>().react(std::declval<Event_>()))>;
 
-    StateWrapper(_StateMixin& state, _StateMachine& state_machine)
-    : state_{state},
-      state_machine_{state_machine}
-    {
-        trace_enter<StateDef>();
-        if constexpr (has_entry_action_v<StateDef>) {
-            state_.on_entry();
-        }
+  StateWrapper(WrapperArgs<State_> args)
+  : state_{args.state},
+    state_machine_{args.state_machine}
+  {
+    //trace_enter<State_>();
+    if constexpr(!std::is_same_v<NOT_IMPLEMENTED, decltype(state_.on_entry())>) {
+      state_.on_entry();
     }
+  }
 
-    ~StateWrapper()
-    {
-        if(moved_from) {
-            return;
-        }
-        trace_exit<StateDef>();
-        if constexpr (has_exit_action_v<StateDef>) {
-            state_.on_exit();
-        }
+  ~StateWrapper()
+  {
+    //trace_exit<State_>();
+    if constexpr(!std::is_same_v<NOT_IMPLEMENTED, decltype(state_.on_entry())>) {
+      state_.on_exit();
     }
+  }
 
-    StateWrapper(StateWrapper&& other)
-    : state_{other.state_},
-      state_machine_{other.state_machine_}
-    {
-        other.moved_from = true;
+  template <typename Event_>
+  bool handle_event(const Event_& e) {
+    bool result = false;
+    if constexpr(std::is_void_v<decltype(state_.react(e))>) {
+      state_.react(e);
+      result = true;
     }
+    else {
+      result = state_.react(e);
+    }
+    state_machine_.template post_react<State_>(result);
+    return result;
+  }
 
-    
+  auto& state() {
+    return state_;
+  }
 
 protected:
-    _StateMixin& state_;
-    _StateMachine& state_machine_;
-    bool moved_from{false};
+  StateMixin<State_> & state_;
+  StateMachine & state_machine_;
 };
 
-template <typename _StateMixin>
-class SimpleStateWrapper : public StateWrapper<_StateMixin>
+template <typename State_>
+class SimpleStateWrapper : public StateWrapper<State_>
 {
 public:
-    using typename StateWrapper<_StateMixin>::StateDef;
-    using typename StateWrapper<_StateMixin>::TopStateDef;
-    using typename StateWrapper<_StateMixin>::_StateMachine;
+  using typename StateWrapper<State_>::StateMachine;
+  using TopState = top_state_t<State_>;
+  template <typename Event_>
+  static constexpr bool HAS_REACT_RECURSIVE = StateWrapper<State_>::template has_react<Event_>;
 
-    SimpleStateWrapper(_StateMixin& state, std::size_t, _StateMachine& state_machine)
-    : StateWrapper<_StateMixin>(state, state_machine)
-    {
-        this->state_.set_current_state_combination(get_current_state_combination());    
-    }
+  SimpleStateWrapper(WrapperArgs<State_> args)
+  : StateWrapper<State_>(args)
+  { 
+    this->state().last_recursive = state_combination_v<State_>;
+  }
 
-    template <typename _Event>
-    auto handle_event(const _Event& e) {
-        return this->state_.handle_event(e);
-    }
-
-    void execute_transition(std::size_t) { }
-
-    std::size_t get_current_state_combination() {
-        return state_combination_v<StateDef>;
-    }
+  void exit(state_combination_t<TopState> const&) {}
+  void enter(state_combination_t<TopState> const&) {}
 };
 
-template <typename _StateMixin>
-class CompositeStateWrapper : public StateWrapper<_StateMixin>
+template <typename Event_, typename StateWrappers_>
+struct has_react;
+
+template <typename Event_, typename ... StateWrapper_>
+struct has_react<Event_, std::tuple<StateWrapper_...>>
+{
+  static constexpr bool value = (StateWrapper_::template HAS_REACT_RECURSIVE<Event_> || ...);
+};
+
+
+template <typename State_>
+class CompositeStateWrapper : public StateWrapper<State_>
 {
 public:
-    using typename StateWrapper<_StateMixin>::StateDef;
-    using typename StateWrapper<_StateMixin>::TopStateDef;
-    using typename StateWrapper<_StateMixin>::_StateMachine;
-    using SubStates = typename StateDef::SubStates;
-    using SubStateMixins = mixins_t<SubStates>;
-    using LookupTable = std::array<void(CompositeStateWrapper<StateMixin<StateDef>>::*)(std::size_t), std::tuple_size_v<SubStates> + 1>;
+  using TopState = top_state_t<State_>;
+  using SubStates = typename State_::SubStates;
+  using SubStateWrappers = tuple_apply_t<wrapper_t, SubStates>;
+  using typename StateWrapper<State_>::StateMachine;
+  static constexpr std::size_t N = std::tuple_size_v<SubStates>;
+  template <typename Event_> // TODO check if needed
+  static constexpr bool HAS_REACT_RECURSIVE = StateWrapper<State_>::template has_react<Event_> | has_react<Event_, SubStateWrappers>::value;
 
-    CompositeStateWrapper(_StateMixin& state, std::size_t target, _StateMachine& state_machine)
-    : StateWrapper<_StateMixin>(state, state_machine)
-    {
-        std::size_t substate_to_enter_local_id = compute_direct_substate<typename _StateMixin::StateDef>(target, type_identity<SubStates>{});
-        std::invoke(lookup_table[substate_to_enter_local_id], this, target);
-        this->state_.set_current_state_combination(get_current_state_combination());
+  CompositeStateWrapper(WrapperArgs<State_> args)
+  : StateWrapper<State_>(args)
+  {
+    if (args.target & state_combination_v<SubStates>) {
+      next_state_id_ = bit_index(args.target & state_combination_v<SubStates>);
     }
-
-    template <typename _Event>
-    auto handle_event(const _Event& e) {
-        auto do_handle_event = overload{
-            [&](auto& active_sub_state){ return active_sub_state.handle_event(e); },
-            [](std::monostate){ return ReactionResult<TopStateDef>{}; }
-        };
-        auto reaction_result = std::visit(do_handle_event, active_sub_state_);
-        return reaction_result.reacted ? reaction_result : this->state_.handle_event(e);
+    else {
+      next_state_id_ = state_id_v<initial_state_t<State_>>;
     }
+    enter(args.target);
+  }
 
-    void execute_transition(std::size_t target) {
-        if(!static_cast<bool>(target & state_combination_v<SubStates>) && initial_state_id_ == active_state_id_) {
-            return; 
+  template <typename Event_>
+  bool handle_event(const Event_& e) {
+    auto do_handle_event = overload{
+      [&](auto& active_sub_state){
+        if constexpr(std::remove_reference_t<decltype(active_sub_state)>::template HAS_REACT_RECURSIVE<Event_>) {
+          return active_sub_state.handle_event(e); 
         }
+        return false;
+      },
+      [](std::monostate) { return false; }
+    };
+    bool reacted = visit(do_handle_event, active_sub_state_);
+    if constexpr(StateWrapper<State_>::template has_react<Event_>) {
+      return reacted || this->StateWrapper<State_>::handle_event(e);
+    }
+    else {
+      return reacted;
+    }
+  }
 
-        if(static_cast<bool>(target & (1 << active_state_id_))) {
-            auto do_execute_transition = overload{
-                [&](auto& active_sub_state){ active_sub_state.execute_transition(target); },
-                [](std::monostate) { }
-            };
-            std::visit(do_execute_transition, active_sub_state_); 
+  void exit(state_combination_t<TopState> const& target) {
+    if ((target & state_combination_recursive_v<State_>)) {
+      if ((target & this->state().last_recursive & ~state_combination_v<State_>)) {
+        auto sub_exit = overload{
+            [&](auto& sub) { sub.exit(target); },
+            [](std::monostate) { }
+        };
+        visit(sub_exit, active_sub_state_);
+      }
+      else {
+        active_sub_state_ = std::monostate{};
+        if (target & state_combination_v<SubStates>) {
+          next_state_id_ = bit_index(target & state_combination_v<SubStates>);
         }
         else {
-            std::size_t substate_to_enter_local_id = compute_direct_substate<typename _StateMixin::StateDef>(target, type_identity<SubStates>{});
-            std::invoke(lookup_table[substate_to_enter_local_id], this, target);
+          next_state_id_ = state_id_v<initial_state_t<State_>>;
         }
+      }
     }
+  }
 
-    std::size_t get_current_state_combination() {
-        auto do_get_state_combination = overload{
-            [&](auto& active_substate) { return active_substate.get_current_state_combination(); },
-            [](std::monostate){ return std::size_t{0}; }
-        };
-        return std::visit(do_get_state_combination, active_sub_state_) | state_combination_v<StateDef>;
+template <auto ... I>
+  void enter(state_combination_t<TopState> const& target, std::index_sequence<I...> const&) {
+    if(next_state_id_) {
+      const int i = next_state_id_ - state_id_v<std::tuple_element_t<0, SubStates>>;
+        ([&]{
+            if(i==I) {
+                using SubState = std::tuple_element_t<I, SubStates>;
+                auto& sub_state = this->state_machine_.template get_state<SubState>();
+                active_sub_state_.template emplace<wrapper_t<SubState>>(WrapperArgs<SubState>{sub_state, this->state_machine_, target});
+                this->state().last_recursive = state_combination_v<State_> | sub_state.last_recursive;
+                this->state().last = state_combination_v<SubState>;
+                next_state_id_ = 0;
+                return true;
+            }
+            return false;
+
+        }()||... );
     }
-
-private:
-    template <typename ... _SubStateDef>
-    static constexpr auto init_lookup_table(type_identity<std::tuple<_SubStateDef...>>) {
-        return LookupTable{&CompositeStateWrapper<_StateMixin>::enter_substate<_SubStateDef>..., &CompositeStateWrapper<_StateMixin>::enter_substate<initial_state_t<StateDef>>};
+    else {
+      auto sub_enter = overload{
+        [&](auto& sub) { sub.enter(target); },
+        [](std::monostate) { }
+      };
+      visit(sub_enter, active_sub_state_);
     }
+  }
 
-    template <typename _DirectSubStateToEnter>
-    void enter_substate(std::size_t target){
-        using T = wrapper_t<StateMixin<_DirectSubStateToEnter>>;
-        active_sub_state_.template emplace<T>(this->state_machine_.template get_state<_DirectSubStateToEnter>(), target, this->state_machine_);
-        active_state_id_ = state_id_v<_DirectSubStateToEnter>;
-        this->state_.set_current_state_combination(get_current_state_combination());
-    }
+  void enter(state_combination_t<TopState> const& target) {
+    enter(target, std::make_index_sequence<N>());
+  }
 
-    to_variant_t<tuple_join_t<std::monostate, wrappers_t<SubStateMixins>>> active_sub_state_;
-    std::size_t active_state_id_ = state_id_v<initial_state_t<StateDef>>;
-    static constexpr std::size_t initial_state_id_ = state_id_v<initial_state_t<StateDef>>;
-    static constexpr LookupTable lookup_table = init_lookup_table(type_identity<SubStates>{});
+private:  
+  to_variant_t<tuple_join_t<std::monostate, SubStateWrappers>> active_sub_state_;
+  std::size_t next_state_id_;
 };
 
-template <typename _StateMixin>
-class OrthogonalStateWrapper : public StateWrapper<_StateMixin>
+template <typename State_>
+class OrthogonalStateWrapper : public StateWrapper<State_>
 {
 public:
-    using typename StateWrapper<_StateMixin>::StateDef;
-    using typename StateWrapper<_StateMixin>::TopStateDef;
-    using typename StateWrapper<_StateMixin>::_StateMachine;
-    using Regions = typename StateDef::Regions;
-    using RegionMixins = mixins_t<Regions>;
+  using TopState = top_state_t<State_>;
+  using Regions = typename State_::Regions;
+  // optional needed to control the order of constuction/destruction of tuple elements
+  using RegionWrappers = tuple_apply_t<wrapper_t, Regions>;
+  using RegionWrapperOptionals = tuple_apply_t<std::optional, RegionWrappers>;
+  using typename StateWrapper<State_>::StateMachine;
+  template <typename Event_>
+  static constexpr bool HAS_REACT_RECURSIVE = StateWrapper<State_>::template has_react<Event_> | has_react<Event_, RegionWrappers>::value;
 
-    OrthogonalStateWrapper(_StateMixin& state, std::size_t target, _StateMachine& state_machine)
-    : OrthogonalStateWrapper<_StateMixin>(state, target, type_identity<Regions>{}, state_machine)
-    {}
+  OrthogonalStateWrapper(WrapperArgs<State_> args)
+  : StateWrapper<State_>(args)
+  {
+    init(args, type_identity<Regions>{});
+  }
 
-    template <typename _Event>
-    auto handle_event(const _Event& e) {
-        auto do_handle_event = [&](auto& ... region){ return (region.handle_event(e), ...); };
-        auto reaction_result = std::apply(do_handle_event, regions_);
-        return reaction_result.reacted ? reaction_result : this->state_.handle_event(e);
+  ~OrthogonalStateWrapper() {
+    auto deinit = [&](auto& ... region){
+      (region.reset(), ...);
+    };
+    std::apply(deinit, regions_);
+  }
+
+  template <typename Event_>
+  bool handle_event(const Event_& e) {
+    auto do_handle_event = [&](auto& ... region){
+      bool reacted = false;
+      ((reacted = region->handle_event(e) || reacted), ...);
+      return reacted;
+    };
+    bool reacted = std::apply(do_handle_event, regions_);
+    if constexpr(StateWrapper<State_>::template has_react<Event_>) {
+      return reacted || this->StateWrapper<State_>::handle_event(e);
     }
-
-    void execute_transition(std::size_t target) {
-        auto do_execute_transition = [&](auto& ... region){ (region.execute_transition(target), ...); };
-        std::apply(do_execute_transition, regions_);
+    else {
+      return reacted;
     }
+  }
 
-    std::size_t get_current_state_combination() {
-        auto do_get_state_combination = [&](auto& ... region) { return (region.get_current_state_combination() | ...); };
-        return std::apply(do_get_state_combination, regions_) | state_combination_v<StateDef>;
-    }
+  void exit(state_combination_t<TopState> const& target) {
+    auto do_exit = [&](auto& ... region){
+      (region->exit(target), ...);
+    };
+    std::apply(do_exit, regions_);
+  }
+
+  void enter(state_combination_t<TopState> const& target) {
+    auto do_enter = [&](auto& ... region){
+      (region->enter(target), ...);
+    };
+    std::apply(do_enter, regions_);
+
+    auto step2 = [&](auto& ... region){
+      this->state().last_recursive = state_combination_v<State_> | (region->state().last_recursive | ...);
+      this->state().last = state_combination_v<State_> | (region->state().last | ...);
+    };
+    std::apply(step2, regions_);
+  }
 
 private:
-    template <typename ... RegionDef>
-    OrthogonalStateWrapper(_StateMixin& state, std::size_t target, type_identity<std::tuple<RegionDef...>>, _StateMachine& state_machine)
-    : StateWrapper<_StateMixin>(state, state_machine),
-      regions_{std::move(wrapper_t<StateMixin<RegionDef>>{state_machine.template get_state<RegionDef>(), target, this->state_machine_})...} 
-    {
-        this->state_.set_current_state_combination(get_current_state_combination());
-    }
+  template <typename ... Region>
+  void init(WrapperArgs<State_> args, type_identity<std::tuple<Region...>>) {
+    auto step1 = [&](auto& ... region){
+      (region.emplace(WrapperArgs<Region>{this->state_machine_.template get_state<Region>(), this->state_machine_, args.target}), ...);
+    };
+    std::apply(step1, regions_);
+    
+    auto step2 = [&](auto& ... region){
+      this->state().last_recursive = state_combination_v<State_> | (region->state().last_recursive | ...);
+      this->state().last = state_combination_v<State_> | (region->state().last | ...);
+    };
+    std::apply(step2, regions_);
+  }
 
-    wrappers_t<RegionMixins> regions_;
+  RegionWrapperOptionals regions_;
 };
+
 
 //=====================================================================================================//
 //                                         STATE MACHINE                                               //
 //=====================================================================================================//
 
-template <typename _TopStateDef>
-class StateMachine
+template <typename Mixin_>
+struct MixinHolder
+{
+  using StateMachine = StateMachine<typename Mixin_::TopState>;
+
+  MixinHolder(StateMachine & state_machine)
+  : mixin{{{{.state_machine_ = state_machine}}}}
+  {}
+
+  Mixin_ mixin;
+};
+
+template <typename TopState_>
+class StateMachine : public StateMachineBase
 {
 public:
-    StateMachine()
-    : StateMachine(std::make_index_sequence<std::tuple_size_v<all_states_t<_TopStateDef>>>{})
-    {}
+  using States = all_states_t<TopState_>;
+  using StateMixins = tuple_apply_t<MixinHolder, tuple_apply_t<StateMixin, States>>;
+  using sc_t = state_combination_t<TopState_>;
+  static constexpr std::size_t N = std::tuple_size_v<States>;
 
-    template <typename _Event>
-    bool dispatch(const _Event& event) {
-        auto reaction_result = active_state_configuration_.handle_event(event);
-        if(reaction_result.reacted && reaction_result.target_combination != 0
-        ) {
-            active_state_configuration_.execute_transition(reaction_result.target_combination);
-            active_state_combination_ = active_state_configuration_.get_current_state_combination();
-        }
-        return reaction_result.reacted;
-    }
+  StateMachine()
+  : all_states_{init_states(type_identity<States>{})},
+    active_state_configuration_{WrapperArgs<TopState_>{get_state<TopState_>(), *this, {}}},
+    target_branch_{0},
+    target_{0}
+  { }
 
-    std::size_t get_active_state_combination() {
-        return active_state_combination_;
-    }
+  // TODO copy, move ctor
 
-    template <typename _StateDef>
-    StateMixin<_StateDef>& get_state() {
-        return std::get<StateMixin<_StateDef>>(all_states_);
-    }
+  template <typename Event_>
+  bool dispatch(const Event_& event = {}) {
+    //trace_event<Event_>();
+    bool reacted = active_state_configuration_.handle_event(event);
+    active_state_configuration_.exit(target_branch_);
+    execute_actions();
+    active_state_configuration_.enter(target_branch_);
+    target_ = 0;
+    target_branch_ = 0;
+    return reacted;
+  }
 
-    template <typename _ContextDef>
-    _ContextDef& get_context() {
-        return get_state<_ContextDef>();
-    }
+  template <typename State_>
+  auto& get_state() {
+    return std::get<MixinHolder<StateMixin<State_>>>(all_states_).mixin;
+  }
 
-    template <typename _StateDef>
-    std::size_t get_shallow_history() {
-        if constexpr(has_substates_v<_StateDef> || has_regions_v<_StateDef>) {
-            return std::get<StateMixin<_StateDef>>(all_states_).get_current_state_combination() & state_combination_v<contained_states_direct_t<_StateDef>>;
-        }
-        else {
-            return state_combination_v<_StateDef>;
-        }
-    }
+  template <typename State_>
+  bool is_in_state() {
+    return (active_state_configuration_.state().last_recursive & state_combination_v<State_>);
+  }
 
-    template <typename _StateDef>
-    std::size_t get_deep_history() {
-        if constexpr(has_substates_v<_StateDef> || has_regions_v<_StateDef>) {
-            return std::get<StateMixin<_StateDef>>(all_states_).get_current_state_combination() & state_combination_recursive_v<contained_states_direct_t<_StateDef>>;
-        }
-        else {
-            return state_combination_v<_StateDef>;
-        }
-    }
+  template <typename State_>
+  void post_react(bool) {
+    //trace_react<State_>(result, target_);
+    target_ = 0;
+  }
 
 private:
-    template <auto ... I>
-    StateMachine(std::index_sequence<I...>)
-    : all_states_{std::move(std::tuple_element_t<I, decltype(all_states_)>{*this})...},
-      active_state_configuration_{std::get<0>(all_states_), state_combination_v<initial_state_t<_TopStateDef>>, *this}
-    {}
+  StateMixins all_states_;
+  wrapper_t<TopState_> active_state_configuration_;
+  sc_t target_branch_;
+  sc_t target_;
 
-    tuple_apply_t<StateMixin, all_states_t<_TopStateDef>> all_states_;
-    wrapper_t<StateMixin<_TopStateDef>> active_state_configuration_;
-    std::size_t active_state_combination_;
-    StateMixin<RootState> root_state_mixin_;
+  friend class StateImplBase;
+
+  template <typename>
+  auto& sm() {
+    return *this;
+  }
+
+  template <typename ... State_>
+  auto init_states(type_identity<std::tuple<State_...>>) {
+    return StateMixins{sm<State_>()...};
+  }
+
+  template <typename Target_>
+  bool transition() {
+    if constexpr(std::is_base_of_v<HistoryBase, Target_>) {
+      using TargetState_ = typename Target_::State;
+      if constexpr(std::is_base_of_v<DeepHistoryBase, Target_>) {
+        return transition<TargetState_>(get_state<TargetState_>().last_recursive);
+      }
+      else {
+        return  transition<TargetState_>(get_state<TargetState_>().last);
+      }
+    }
+    else {       
+      return transition<Target_>(sc_t{});
+    }
+  }
+
+  template <typename TargetState_>
+  bool transition(sc_t const& history) {
+    sc_t new_target = state_combination_v<TargetState_>;
+    sc_t new_target_branch = new_target | history | state_combination_v<super_state_recursive_t<TargetState_>>;
+    bool valid = is_valid<TopState_>(target_branch_, new_target_branch);
+    if(valid) {
+      target_branch_ |= new_target_branch;
+      target_ |= new_target;
+    }
+    return valid;
+  }
+
+  void execute_actions() {
+    if(this->action_) {
+      std::invoke(*this->action_);
+      this->action_.reset();
+    }
+  }
 };
 
 
-
 }
-
-#include "trace.hpp"
