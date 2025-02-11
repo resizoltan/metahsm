@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED On)
 include(FetchContent)
 include(CTest)
 
-#add_compile_options(-ftime-trace -c)
+add_compile_options(-ftime-trace -c)
 
 #FetchContent_Declare(
 #  Catch2

@@ -433,13 +433,7 @@ public:
       return reacted;
     };
     bool reacted = std::apply(do_handle_event, regions_);
-
-    if constexpr(StateWrapper<State_>::template has_react<Event_>) {
-      return reacted || this->StateWrapper<State_>::handle_event(e);
-    }
-    else {
-      return reacted;
-    }
+    return reacted || this->StateWrapper<State_>::handle_event(e);
   }
 
   void exit(state_combination_t<TopState> const& target) {

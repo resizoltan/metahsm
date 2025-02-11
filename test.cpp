@@ -16,41 +16,19 @@ enum LifecycleEvent
 template <auto e>
 struct Event{};
 
-#define S(NAME) struct NAME : State
-#define R(NAME) struct NAME : Region
-#define states(...) using SubStates = std::tuple<__VA_ARGS__>;
-#define regions(...) using Regions = std::tuple<__VA_ARGS__>;
-#define on(EVENT) auto react(Event<EVENT>)
-#define to(TARGET) { transition<TARGET>(); }
-
-struct LifecycleTopState : State<LifecycleTopState> {
-  S(Unconfigured)   { on(CONFIGURE)   to(Active)            };
-  S(Inactive)       { on(ACTIVATE)    to(History<Active>)   };
-  S(Active)         { on(DEACTIVATE)  to(Inactive)
-    R(Operation)    {
-      S(Monitoring)   { on(ACTIVATE)    to(Commanding)     };
-      S(Commanding)   { on(CLEANUP)     to(Monitoring)     };  states(Monitoring, Commanding)
-    };
-    R(Safety)       {
-      S(Ok)           { on(CLEANUP)     { }                 };
-      S(Error)        {                                     };  states(Ok, Error)
-    };                                                          regions(Operation, Safety)
-  };                                                            states(Unconfigured, Inactive, Active)
-};
-
-struct LifecycleTopState2 : State<LifecycleTopState2>
+struct LifecycleTopState : State<LifecycleTopState>
 {
   struct Unconfigured : State
   {
-    void react(Event<CONFIGURE>) /*Inactive*/ {};
+    void react(Event<CONFIGURE>); // -> Inactive
   };
   struct Inactive : State
   {
-    void react(Event<ACTIVATE>) /*Active*/ {};
+    void react(Event<ACTIVATE>); // -> Active
   };
   struct Active : State
   {
-    inline void react(Event<DEACTIVATE>) /*Inactive*/ {
+    inline void react(Event<DEACTIVATE>) {
       transition<Inactive>();
     }
     int i = 0;
@@ -58,7 +36,7 @@ struct LifecycleTopState2 : State<LifecycleTopState2>
     {
       struct Monitoring : State
       {
-        inline void react(Event<ACTIVATE>) /*Commanding*/ {
+        inline void react(Event<ACTIVATE>) {
           transition<Commanding>();
           transition_action(&Monitoring::action);
         }
@@ -66,7 +44,7 @@ struct LifecycleTopState2 : State<LifecycleTopState2>
       };
       struct Commanding : State
       {
-        inline void react(Event<CLEANUP>) /*Monitoring, Error*/ { 
+        inline void react(Event<CLEANUP>) { 
           std::cout << "Before Action1!" << std::endl;
           transition<Monitoring>();
           transition<Safety::Error>();
@@ -79,7 +57,7 @@ struct LifecycleTopState2 : State<LifecycleTopState2>
     {
       struct Ok : State
       {
-        inline void react(Event<CLEANUP>) /**/ {
+        inline void react(Event<CLEANUP>) {
           std::cout << "Before Action3!" << std::endl;
           transition_action([this](){ std::cout << "Action3!" << std::endl; });
         }
@@ -93,67 +71,86 @@ struct LifecycleTopState2 : State<LifecycleTopState2>
   using SubStates = std::tuple<Unconfigured, Inactive, Active>;
 };
 
-struct LifecycleTopState3 : State<LifecycleTopState3>
+void LifecycleTopState::Unconfigured::react(Event<CONFIGURE>) {
+  transition<Inactive>();
+  auto& active_context = context<Active>();
+  active_context.i = 1;
+}
+
+void LifecycleTopState::Inactive::react(Event<ACTIVATE>) {
+  transition<History<Active>>();
+  assert(is_in_state<Inactive>());
+}
+
+template <typename Config>
+struct TLC : StateTemplate<TLC>, Config
 {
-  struct Unconfigured : State
+  struct Unconfigured : State, Config
   {
-    void react(Event<CONFIGURE>); /*Inactive*/
+    inline void react(Event<CONFIGURE>) {
+      transition<Inactive>();
+    }
   };
-  struct Inactive : State
-  {
-    void react(Event<ACTIVATE>); /*Active*/
-  };
-  struct Active : State
-  {
-    inline void react(Event<DEACTIVATE>); /*Inactive*/
-    int i = 0;
-    struct Operation : Region
-    {
-      struct Monitoring : State
-      {
-        inline void react(Event<ACTIVATE>); /*Commanding*/
-        inline void action();
-      };
-      struct Commanding : State
-      {
-        inline void react(Event<CLEANUP>); /*Monitoring, Error*/
-      };
-      using SubStates = std::tuple<Monitoring, Commanding>;
-    };
-    struct Safety : Region
-    {
-      struct Ok : State
-      {
-        inline void react(Event<CLEANUP>); /**/
-      };
-      struct Error : State
-      { };
-      using SubStates = std::tuple<Ok, Error>;
-    };
-    using Regions = std::tuple<Operation, Safety>;
-  };
-  using SubStates = std::tuple<Unconfigured, Inactive, Active>;
+  using Inactive = typename Config::Inactive;
+  using SubStates = std::tuple<Unconfigured, Inactive>;
 };
 
-struct LifecycleTopState3 : State<LifecycleTopState3>
+struct Inactive1;
+struct TLCConfig1 : Config<TLCConfig1>
 {
-  S(Unconfigured) {   on(CONFIGURE);  /*Inactive*/          };
-  S(Inactive)     {   on(ACTIVATE);   /*Active*/            };
-  S(Active)       {   on(DEACTIVATE); /*Inactive*/
-    int i = 0;
-    R(Operation) {
-      S(Monitoring) {   on(ACTIVATE); /*Commanding*/        };
-      S(Commanding) {   on(CLEANUP); /*Monitoring, Error*/  };
-      states(Monitoring, Commanding)                        };
-    R(Safety) {
-      S(Ok)         {   on(CLEANUP); /**/                   };
-      S(Error)      {                                       };
-      states(Ok, Error)                                     };
-    regions(Operation, Safety)                              };
-  states(Unconfigured, Inactive, Active)
+  using Inactive = Inactive1;
+};
+struct Inactive1 : State<TLC<TLCConfig1>>
+{
+  inline void react(Event<ACTIVATE>) { };
+};
+
+struct Inactive2;
+struct TLC2TopState;
+struct TLCConfig2 : Config<TLCConfig2>
+{
+  using Inactive = Inactive2;
+  using TopState = TLC2TopState;
+};
+
+struct TLC2TopState : State<TLC2TopState>
+{
+  using SubStates = std::tuple<TLC<TLCConfig2>>;
+};
+
+struct Inactive2 : State<TLC2TopState>
+{
+  inline void react(Event<ACTIVATE>) { };
 };
 
 
+template <typename Config>
+struct TLC3 : StateTemplate<TLC3>, Config
+{
+  struct Unconfigured : State, Config
+  {
+    inline void react(Event<CONFIGURE>) {
+      transition<Unconfigured>();
+    }
+  };
+  using SubStates = std::tuple<Unconfigured>;
+};
+struct TLC3TopState : State<TLC3TopState>
+{
+  using Regions = std::tuple<TLC3<TopStateRebind<TLC3TopState>>>;
+};
+
+template <typename T1, typename T2>
+void ass() {
+    static_assert(std::is_same_v<T1,T2>);
+}
+
+template <auto ... I>
+void init(std::index_sequence<I...>) {
+   StateMachine<LifecycleTopState> sm;
+
+  //tuple_apply_t<StateMixin, all_states_t<LifecycleTopState>> states{(I, 1)...};
+}
 
 
 int main(int , char *[]) {
