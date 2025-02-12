@@ -1,3 +1,17 @@
+// Copyright [2025] [Zoltán Rési]
+
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+
+//     http://www.apache.org/licenses/LICENSE-2.0
+
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #pragma once
 
 #include <type_traits>
@@ -232,7 +246,7 @@ public:
   : state_{args.state},
     state_machine_{args.state_machine}
   {
-    //trace_enter<State_>();
+    trace_enter<State_>();
     if constexpr(!std::is_same_v<NOT_IMPLEMENTED, decltype(state_.on_entry())>) {
       state_.on_entry();
     }
@@ -240,7 +254,7 @@ public:
 
   ~StateWrapper()
   {
-    //trace_exit<State_>();
+    trace_exit<State_>();
     if constexpr(!std::is_same_v<NOT_IMPLEMENTED, decltype(state_.on_entry())>) {
       state_.on_exit();
     }
@@ -516,7 +530,7 @@ public:
 
   template <typename Event_>
   bool dispatch(const Event_& event = {}) {
-    //trace_event<Event_>();
+    trace_event<Event_>();
     bool reacted = active_state_configuration_.handle_event(event);
     active_state_configuration_.exit(target_branch_);
     execute_actions();
@@ -537,8 +551,8 @@ public:
   }
 
   template <typename State_>
-  void post_react(bool) {
-    //trace_react<State_>(result, target_);
+  void post_react(bool result) {
+    trace_react<State_>(result, target_);
     target_ = 0;
   }
 
